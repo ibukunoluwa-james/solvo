@@ -1,26 +1,75 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Surfaces */
+  --color-canvas: #fafaf8;
+  --color-card: #ffffff;
+  --color-subtle: #f4f4f3;
+  --color-muted: #fafaf8;
+
+  /* Borders */
+  --color-border: #ececeb;
+  --color-border-subtle: #f4f4f3;
+  --color-border-strong: #d4d4d8;
+
+  /* Text */
+  --color-text-primary: #18181b;
+  --color-text-secondary: #52525b;
+  --color-text-tertiary: #71717a;
+  --color-text-quaternary: #a1a1aa;
+
+  /* Semantic */
+  --color-success: #15803d;
+  --color-success-bg: #f0fdf4;
+  --color-success-border: #dcfce7;
+  --color-warning: #b45309;
+  --color-warning-bg: #fef3c7;
+  --color-warning-bg-soft: #fffbf5;
+  --color-warning-border: #fde68a;
+  --color-info: #1e40af;
+  --color-info-bg: #eff6ff;
+  --color-info-border: #dbeafe;
+
+  /* Avatar pairs (bg / fg) */
+  --color-avatar-amber-bg: #fef3c7;
+  --color-avatar-amber-fg: #92400e;
+  --color-avatar-blue-bg: #dbeafe;
+  --color-avatar-blue-fg: #1e40af;
+  --color-avatar-rose-bg: #fce7f3;
+  --color-avatar-rose-fg: #9d174d;
+  --color-avatar-indigo-bg: #e0e7ff;
+  --color-avatar-indigo-fg: #3730a3;
+
+  /* Radius */
+  --radius-card: 8px;
+  --radius-subtle: 5px;
+  --radius-pill: 10px;
+
+  /* Font */
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tabular numerals helper — every number in the UI uses this */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Uppercase label style */
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
 }
