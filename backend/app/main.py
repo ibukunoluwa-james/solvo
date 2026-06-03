@@ -23,6 +23,7 @@ from app.routers import (
     advances_router,
     compliance_router,
 )
+from app.routers.webhooks import router as webhooks_router
 
 # Ensure all models are imported so Base.metadata knows about them
 import app.models  # noqa: F401
@@ -32,6 +33,12 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
@@ -62,6 +69,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # ── CORS ──
 app.add_middleware(
     CORSMiddleware,
@@ -78,6 +88,7 @@ app.include_router(employees_router)
 app.include_router(payroll_router)
 app.include_router(advances_router)
 app.include_router(compliance_router)
+app.include_router(webhooks_router)
 
 
 # ── Health Check ──

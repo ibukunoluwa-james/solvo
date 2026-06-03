@@ -5,6 +5,7 @@ uvicorn[standard]==0.32.1
 # Database
 sqlalchemy==2.0.36
 asyncpg==0.30.0
+aiosqlite==0.20.0
 alembic==1.14.0
 
 # Pydantic (validation + settings)
@@ -19,6 +20,9 @@ passlib[bcrypt]==1.7.4
 # HTTP client (for Kora API calls)
 httpx==0.28.1
 
+# Rate limiting
+slowapi==0.1.9
+
 # Environment
 python-dotenv==1.0.1
 
@@ -29,4 +33,3 @@ pytz==2024.2
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.24.0
-httpx==0.28.1

@@ -5,8 +5,8 @@ Auth schemas — registration, login, and token payloads.
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
-
+from pydantic import BaseModel, EmailStr, Field, field_validator
+import re
 
 # ── Registration ──
 
@@ -22,6 +22,13 @@ class EmployerRegister(BaseModel):
     )
     industry: str | None = None
     currency: str = Field(default="USD", max_length=3)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if not re.search(r"[0-9]", v) or not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
+            raise ValueError("Password must contain at least one number and one special character")
+        return v
 
 
 class EmployeeRegister(BaseModel):
@@ -40,6 +47,13 @@ class EmployeeRegister(BaseModel):
     mobile_wallet: str | None = None
     tax_id: str | None = None
     pension_id: str | None = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if not re.search(r"[0-9]", v) or not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
+            raise ValueError("Password must contain at least one number and one special character")
+        return v
 
 
 # ── Login ──

@@ -53,7 +53,7 @@ class PayrollService:
                 PayrollRun.company_id == company_id,
                 PayrollRun.period_month == period_month,
                 PayrollRun.period_year == period_year,
-                PayrollRun.status.notin_(["failed"]),
+                PayrollRun.status.notin_([PayrollRunStatus.failed]),
             )
         )
         if existing.scalar_one_or_none():

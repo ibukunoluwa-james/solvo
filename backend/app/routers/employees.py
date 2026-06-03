@@ -28,6 +28,56 @@ from app.schemas.payroll import PayrollEntryResponse
 router = APIRouter(prefix="/api/v1/employees", tags=["Employees"])
 
 
+# ── Employee Self-Serve Endpoints ──
+# NOTE: These MUST be defined before /{employee_id} routes, otherwise
+# FastAPI will try to parse "me" as a UUID and return a 422 error.
+
+@router.get("/me/profile", response_model=EmployeeResponse)
+async def get_my_profile(
+    current_user: User = Depends(require_employee),
+    db: AsyncSession = Depends(get_db),
+):
+    """Employee views their own profile."""
+    if not current_user.employee_profile:
+        raise HTTPException(status_code=404, detail="Employee profile not found")
+    return current_user.employee_profile
+
+
+@router.get("/me/payslips", response_model=list[PayrollEntryResponse])
+async def get_my_payslips(
+    current_user: User = Depends(require_employee),
+    db: AsyncSession = Depends(get_db),
+):
+    """Employee views their own payslip history."""
+    if not current_user.employee_profile:
+        raise HTTPException(status_code=404, detail="Employee profile not found")
+
+    result = await db.execute(
+        select(PayrollEntry)
+        .where(PayrollEntry.employee_id == current_user.employee_profile.id)
+        .order_by(PayrollEntry.payroll_run_id.desc())
+    )
+    entries = result.scalars().all()
+
+    return [
+        PayrollEntryResponse(
+            id=e.id,
+            employee_id=e.employee_id,
+            gross_salary=float(e.gross_salary),
+            paye_tax=float(e.paye_tax),
+            pension_employee=float(e.pension_employee),
+            pension_employer=float(e.pension_employer),
+            nhf=float(e.nhf),
+            other_deductions=float(e.other_deductions),
+            net_salary=float(e.net_salary),
+            currency=e.currency,
+            kora_transfer_id=e.kora_transfer_id,
+            status=e.status.value,
+        )
+        for e in entries
+    ]
+
+
 # ── Employer Endpoints ──
 
 @router.post(
@@ -195,51 +245,3 @@ async def remove_employee(
         user.is_active = False
 
     await db.flush()
-
-
-# ── Employee Self-Serve Endpoints ──
-
-@router.get("/me/profile", response_model=EmployeeResponse)
-async def get_my_profile(
-    current_user: User = Depends(require_employee),
-    db: AsyncSession = Depends(get_db),
-):
-    """Employee views their own profile."""
-    if not current_user.employee_profile:
-        raise HTTPException(status_code=404, detail="Employee profile not found")
-    return current_user.employee_profile
-
-
-@router.get("/me/payslips", response_model=list[PayrollEntryResponse])
-async def get_my_payslips(
-    current_user: User = Depends(require_employee),
-    db: AsyncSession = Depends(get_db),
-):
-    """Employee views their own payslip history."""
-    if not current_user.employee_profile:
-        raise HTTPException(status_code=404, detail="Employee profile not found")
-
-    result = await db.execute(
-        select(PayrollEntry)
-        .where(PayrollEntry.employee_id == current_user.employee_profile.id)
-        .order_by(PayrollEntry.payroll_run_id.desc())
-    )
-    entries = result.scalars().all()
-
-    return [
-        PayrollEntryResponse(
-            id=e.id,
-            employee_id=e.employee_id,
-            gross_salary=float(e.gross_salary),
-            paye_tax=float(e.paye_tax),
-            pension_employee=float(e.pension_employee),
-            pension_employer=float(e.pension_employer),
-            nhf=float(e.nhf),
-            other_deductions=float(e.other_deductions),
-            net_salary=float(e.net_salary),
-            currency=e.currency,
-            kora_transfer_id=e.kora_transfer_id,
-            status=e.status.value,
-        )
-        for e in entries
-    ]

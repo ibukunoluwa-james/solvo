@@ -18,14 +18,15 @@ from app.config import settings
 
 
 # ── Engine ──
-# pool_pre_ping keeps connections healthy across idle periods
-engine = create_async_engine(
-    settings.database_url,
-    echo=(settings.app_env == "development"),
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-)
+engine_kwargs = {"echo": settings.app_env == "development"}
+if settings.database_url.startswith("postgresql"):
+    engine_kwargs.update({
+        "pool_pre_ping": True,
+        "pool_size": 10,
+        "max_overflow": 20,
+    })
+
+engine = create_async_engine(settings.database_url, **engine_kwargs)
 
 # ── Session Factory ──
 async_session_factory = async_sessionmaker(

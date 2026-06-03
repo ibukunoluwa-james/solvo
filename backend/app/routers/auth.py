@@ -8,18 +8,20 @@ Endpoints:
     POST /refresh            — Refresh access token
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.main import limiter
 from app.dependencies import (
     hash_password,
     verify_password,
     create_access_token,
     create_refresh_token,
+    get_current_user,
 )
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, TokenBlocklist
 from app.models.company import Company
 from app.models.employee import Employee, EmploymentType
 from app.schemas.auth import (
@@ -146,7 +148,9 @@ async def register_employee(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     payload: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -187,6 +191,16 @@ async def refresh_token(
 ):
     """Refresh an expired access token using a valid refresh token."""
     try:
+        # Check if the token is blacklisted
+        is_blacklisted = await db.execute(
+            select(TokenBlocklist).where(TokenBlocklist.token == payload.refresh_token)
+        )
+        if is_blacklisted.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+            )
+
         data = jwt.decode(
             payload.refresh_token,
             settings.secret_key,
@@ -215,3 +229,18 @@ async def refresh_token(
         role=role,
         user_id=user_id,
     )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    payload: RefreshRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Logout by blacklisting the refresh token."""
+    # We could also validate the JWT signature, but if it's invalid it won't be usable anyway.
+    blocklisted_token = TokenBlocklist(token=payload.refresh_token)
+    db.add(blocklisted_token)
+    await db.commit()
+    return None
+

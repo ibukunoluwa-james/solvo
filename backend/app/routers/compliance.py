@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.dependencies import require_employer
 from app.models.user import User
-from app.models.payroll import PayrollRun
+from app.models.payroll import PayrollRun, PayrollRunStatus
 from app.models.tax_remittance import TaxRemittance
 from app.schemas.payroll import PayrollRunResponse, TaxSummaryItem
 
@@ -35,7 +35,7 @@ async def list_compliance_reports(
         select(PayrollRun)
         .where(
             PayrollRun.company_id == company.id,
-            PayrollRun.status.in_(["completed", "previewed"]),
+            PayrollRun.status.in_([PayrollRunStatus.completed, PayrollRunStatus.previewed]),
         )
         .order_by(PayrollRun.initiated_at.desc())
     )
