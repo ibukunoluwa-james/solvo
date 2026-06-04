@@ -1,11 +1,11 @@
-import Header from "../_components/Header";
+import Header from "../../_components/Header";
 import {
   Avatar,
   Button,
   Card,
   Pill,
   ProgressBar,
-} from "../_components/ui";
+} from "../../_components/ui";
 
 type Status = "settled" | "sending" | "queued" | "retrying";
 

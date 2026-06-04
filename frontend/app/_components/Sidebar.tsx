@@ -13,7 +13,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/", label: "Overview", icon: "ti-layout-grid" },
   { href: "/people", label: "People", icon: "ti-users", badge: "40" },
-  { href: "/pay-runs", label: "Pay runs", icon: "ti-cash" },
+  { href: "/payroll", label: "Pay runs", icon: "ti-cash" },
   {
     href: "/disbursements",
     label: "Disbursements",
@@ -24,6 +24,12 @@ const NAV: NavItem[] = [
   { href: "/wallets", label: "Wallets", icon: "ti-wallet" },
   { href: "/reports", label: "Reports", icon: "ti-file-text" },
 ];
+
+const SETTINGS_ITEM: NavItem = {
+  href: "/settings",
+  label: "Settings",
+  icon: "ti-settings",
+};
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -105,6 +111,28 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Settings (separated by a 1px divider per spec) */}
+      <div className="px-3 mt-3 pt-3 border-t border-border">
+        {(() => {
+          const active = isActive(SETTINGS_ITEM.href);
+          return (
+            <Link
+              href={SETTINGS_ITEM.href}
+              className={`flex items-center gap-[9px] px-[9px] py-[7px] rounded-[5px] transition-colors ${
+                active
+                  ? "bg-subtle text-text-primary"
+                  : "text-text-secondary hover:bg-subtle/60"
+              }`}
+            >
+              <i className={`ti ${SETTINGS_ITEM.icon} text-[15px] shrink-0`} />
+              <span className="text-[12.5px] font-medium flex-1 leading-none">
+                {SETTINGS_ITEM.label}
+              </span>
+            </Link>
+          );
+        })()}
+      </div>
 
       {/* Spacer */}
       <div className="mt-auto" />

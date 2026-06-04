@@ -1,5 +1,5 @@
-import Header from "./_components/Header";
-import { Avatar, Button, Card, StatStrip } from "./_components/ui";
+import Header from "../_components/Header";
+import { Button, Card, StatStrip } from "../_components/ui";
 
 type ActivityIcon = "settled" | "advance" | "onboard" | "retry";
 
@@ -82,7 +82,7 @@ export default function OverviewPage() {
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="secondary">Edit</Button>
-                <Button variant="primary" href="/pay-runs">
+                <Button variant="primary" href="/payroll/june-2026">
                   Review &amp; approve
                 </Button>
               </div>

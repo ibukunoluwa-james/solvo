@@ -1,5 +1,6 @@
-import Header from "../_components/Header";
-import { Avatar, Button, Card, Pill, StatStrip } from "../_components/ui";
+import Link from "next/link";
+import Header from "../../_components/Header";
+import { Avatar, Button, Card, Pill, StatStrip } from "../../_components/ui";
 
 type Signal = { kind: "positive" | "concern"; text: string };
 
@@ -110,7 +111,13 @@ export default function AdvancesPage() {
             style={{ gridTemplateColumns: "1fr 1fr", gap: "16px" }}
           >
             {PENDING.map((p) => (
-              <PendingCard key={p.name} item={p} />
+              <Link
+                key={p.name}
+                href={`/advances/${p.name.toLowerCase().replace(/\s+/g, "-")}`}
+                className="block focus:outline-none"
+              >
+                <PendingCard item={p} />
+              </Link>
             ))}
           </div>
 

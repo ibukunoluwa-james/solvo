@@ -1,6 +1,6 @@
 import Link from "next/link";
-import Header from "../_components/Header";
-import { Avatar, Button, Card, Pill } from "../_components/ui";
+import Header from "../../../_components/Header";
+import { Avatar, Button, Card, Pill } from "../../../_components/ui";
 
 type Row = {
   name: string;
@@ -91,7 +91,7 @@ export default function PayRunReviewPage() {
         left={
           <div className="flex items-center gap-2 min-w-0">
             <Link
-              href="/pay-runs"
+              href="/payroll"
               className="text-[13px] text-text-tertiary hover:text-text-secondary"
             >
               Pay runs

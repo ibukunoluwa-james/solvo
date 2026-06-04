@@ -1,6 +1,9 @@
-import Header from "../_components/Header";
-import { Avatar, Button, Card, Pill } from "../_components/ui";
-import { PEOPLE } from "../_data/people";
+import Link from "next/link";
+import Header from "../../_components/Header";
+import { Avatar, Button, Card, Pill } from "../../_components/ui";
+import { PEOPLE } from "../../_data/people";
+
+const slug = (name: string) => name.toLowerCase().replace(/\s+/g, "-");
 
 const formatUsd = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0 });
@@ -11,7 +14,7 @@ export default function PeoplePage() {
       <Header
         title="People"
         right={
-          <Button icon="ti-plus" variant="primary">
+          <Button icon="ti-plus" variant="primary" href="/employees/add">
             Add person
           </Button>
         }
@@ -77,9 +80,10 @@ export default function PeoplePage() {
 
             {/* Data rows */}
             {PEOPLE.map((p, i) => (
-              <div
+              <Link
                 key={p.email}
-                className={`grid items-center px-[22px] py-[14px] ${
+                href={`/employees/${slug(p.name)}`}
+                className={`grid items-center px-[22px] py-[14px] hover:bg-canvas transition-colors ${
                   i < PEOPLE.length - 1 ? "border-b border-border-subtle" : ""
                 }`}
                 style={{
@@ -117,7 +121,7 @@ export default function PeoplePage() {
                 <div className="flex justify-end">
                   <Pill tone={p.status.tone}>{p.status.label}</Pill>
                 </div>
-              </div>
+              </Link>
             ))}
           </Card>
 
