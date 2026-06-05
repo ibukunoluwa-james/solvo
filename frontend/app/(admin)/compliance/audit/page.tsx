@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import Header from "../../../_components/Header";
 import { Button, Card, Pill } from "../../../_components/ui";
 import { api } from "../../../_lib/api";
+import { useApi, PageStatus } from "../../../_lib/useApi";
 
 const CC_TO_NAME: Record<string, string> = {
   NG: "Nigeria", KE: "Kenya", ZA: "South Africa", EG: "Egypt", GH: "Ghana",
@@ -13,8 +16,11 @@ const fmtMoney = (n: number, currency: string) =>
 const fmtDateTime = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "—";
 
-export default async function AuditTrailPage() {
-  const audit = await api.compliance.auditTrail({ limit: 50 });
+export default function AuditTrailPage() {
+  const { data, loading, error, reload } = useApi(() => api.compliance.auditTrail({ limit: 50 }));
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
+
+  const audit = data;
 
   return (
     <>

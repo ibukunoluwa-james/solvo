@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { api } from "../_lib/api";
+import { initials } from "./ui";
 
 const NAV = [
   { href: "/me", label: "My profile", icon: "ti-user" },
@@ -12,6 +15,30 @@ const NAV = [
 
 export default function EmployeeSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [profile, setProfile] = useState<{ name: string; subtitle: string } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api.employees
+      .myProfile()
+      .then((p) => {
+        if (alive)
+          setProfile({
+            name: p.full_name,
+            subtitle: p.employment_type === "contractor" ? "Contractor" : "Employee",
+          });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function logout() {
+    await api.auth.logout();
+    router.replace("/login");
+  }
 
   const isActive = (href: string) => {
     if (href === "/me") return pathname === "/me";
@@ -87,16 +114,24 @@ export default function EmployeeSidebar() {
       {/* User block */}
       <div className="border-t border-border px-[10px] py-[10px] flex items-center gap-2">
         <div className="w-6 h-6 rounded-full bg-avatar-amber-bg text-avatar-amber-fg text-[9px] font-semibold flex items-center justify-center shrink-0">
-          AO
+          {profile ? initials(profile.name) : "·"}
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[11.5px] font-medium text-text-primary leading-tight truncate">
-            Adaeze O.
+            {profile?.name ?? "—"}
           </div>
           <div className="text-[10px] text-text-quaternary leading-tight truncate">
-            Mavenly
+            {profile?.subtitle ?? ""}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={logout}
+          aria-label="Sign out"
+          className="w-6 h-6 flex items-center justify-center rounded-[5px] text-text-tertiary hover:text-text-primary hover:bg-subtle transition-colors"
+        >
+          <i className="ti ti-logout text-[14px]" />
+        </button>
       </div>
     </aside>
   );

@@ -1,6 +1,9 @@
+"use client";
+
 import Header from "../../_components/Header";
 import { Button, Card, StatStrip } from "../../_components/ui";
 import { api } from "../../_lib/api";
+import { useApi, PageStatus } from "../../_lib/useApi";
 import type { PayrollRun } from "../../_lib/types";
 
 const MONTHS = [
@@ -24,17 +27,22 @@ const CC_TO_NAME: Record<string, string> = {
   TZ: "Tanzania",
 };
 
-export default async function OverviewPage() {
-  const [dashboard, runsResp, pendingAdvances] = await Promise.all([
-    api.companies.getDashboard(),
-    api.payroll.listRuns({ limit: 20 }),
-    api.advances.list({ status_filter: "pending", limit: 10 }),
-  ]);
+export default function OverviewPage() {
+  const { data, loading, error, reload } = useApi(async () => {
+    const [dashboard, runsResp, pendingAdvances, empList] = await Promise.all([
+      api.companies.getDashboard(),
+      api.payroll.listRuns({ limit: 20 }),
+      api.advances.list({ status_filter: "pending", limit: 10 }),
+      api.employees.list({ limit: 200 }),
+    ]);
+    return { dashboard, runsResp, pendingAdvances, empList };
+  });
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
 
+  const { dashboard, runsResp, pendingAdvances, empList } = data;
   const draftRun = runsResp.runs.find((r) => r.status === "draft");
 
   // By-country: aggregate gross_salary from /employees per country.
-  const empList = await api.employees.list({ limit: 200 });
   const byCountry = new Map<string, number>();
   for (const e of empList.employees) {
     byCountry.set(e.country, (byCountry.get(e.country) ?? 0) + e.gross_salary);

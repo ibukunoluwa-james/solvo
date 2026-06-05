@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import Header from "../../_components/Header";
 import { Avatar, Button, Card } from "../../_components/ui";
 import { api } from "../../_lib/api";
+import { useApi, PageStatus } from "../../_lib/useApi";
 
 const CC_TO_NAME: Record<string, string> = {
   NG: "Nigeria",
@@ -18,8 +21,11 @@ const CC_TO_NAME: Record<string, string> = {
 const fmtSalary = (n: number, currency: string) =>
   `${currency} ${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
-export default async function PeoplePage() {
-  const { employees, total } = await api.employees.list({ limit: 50 });
+export default function PeoplePage() {
+  const { data, loading, error, reload } = useApi(() => api.employees.list({ limit: 50 }));
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
+
+  const { employees, total } = data;
   const empCount = employees.filter((e) => e.employment_type === "full_time").length;
   const ctrCount = employees.filter((e) => e.employment_type === "contractor").length;
 

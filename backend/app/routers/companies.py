@@ -17,6 +17,7 @@ from app.models.payroll import PayrollRun, PayrollRunStatus
 from app.models.advance import AdvanceRequest, AdvanceStatus
 from app.models.tax_remittance import TaxRemittance, RemittanceStatus
 from app.schemas.company import CompanyResponse, CompanyUpdate, DashboardSummary
+from app.services.kora_service import KoraService, KoraError
 
 router = APIRouter(prefix="/api/v1/companies", tags=["Companies"])
 
@@ -55,6 +56,39 @@ async def update_my_company(
 
     await db.flush()
     return company
+
+
+@router.get("/me/balance")
+async def get_balance(
+    current_user: User = Depends(require_employer),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Live funding-source balance from Kora — available + pending balance for the
+    company's base currency, plus the full per-currency breakdown.
+    """
+    company = current_user.company
+    if not company:
+        raise HTTPException(status_code=404, detail="No company found")
+
+    kora = KoraService()
+    try:
+        balances = await kora.get_balances()
+    except KoraError as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Could not fetch balance from Kora: {exc}"
+        )
+
+    base = company.currency or "NGN"
+    current = balances.get(base, {})
+    return {
+        "currency": base,
+        "available_balance": current.get("available_balance", 0),
+        "pending_balance": current.get("pending_balance", 0),
+        "kora_wallet_id": company.kora_wallet_id,
+        "balances": balances,
+        "mock": kora.mock_mode,
+    }
 
 
 @router.get("/me/dashboard", response_model=DashboardSummary)

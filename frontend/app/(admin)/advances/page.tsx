@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import Header from "../../_components/Header";
 import { Avatar, Button, Card, Pill, StatStrip } from "../../_components/ui";
 import { api } from "../../_lib/api";
+import { useApi, PageStatus } from "../../_lib/useApi";
 import type { Advance } from "../../_lib/types";
 
 const fmtMoney = (n: number, currency: string) =>
@@ -18,13 +21,18 @@ const relTime = (iso: string) => {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 };
 
-export default async function AdvancesPage() {
-  const [allResp, pendingResp, approvedResp, disbursedResp] = await Promise.all([
-    api.advances.list({ limit: 50 }),
-    api.advances.list({ status_filter: "pending", limit: 20 }),
-    api.advances.list({ status_filter: "approved", limit: 20 }),
-    api.advances.list({ status_filter: "disbursed", limit: 20 }),
-  ]);
+export default function AdvancesPage() {
+  const { data, loading, error, reload } = useApi(() =>
+    Promise.all([
+      api.advances.list({ limit: 50 }),
+      api.advances.list({ status_filter: "pending", limit: 20 }),
+      api.advances.list({ status_filter: "approved", limit: 20 }),
+      api.advances.list({ status_filter: "disbursed", limit: 20 }),
+    ]),
+  );
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
+
+  const [allResp, pendingResp, approvedResp, disbursedResp] = data;
 
   const monthSum = allResp.advances.reduce((s, a) => s + a.amount, 0);
   // Show sum in any one currency for the demo — choose USD-ish stand-in

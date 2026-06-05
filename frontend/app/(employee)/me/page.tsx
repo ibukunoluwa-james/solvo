@@ -1,6 +1,9 @@
+"use client";
+
 import Header from "../../_components/Header";
 import { Avatar, Button, Card, Pill } from "../../_components/ui";
 import { api } from "../../_lib/api";
+import { useApi, PageStatus } from "../../_lib/useApi";
 
 const CC_TO_NAME: Record<string, string> = {
   NG: "Nigeria", KE: "Kenya", ZA: "South Africa", EG: "Egypt", GH: "Ghana",
@@ -12,10 +15,17 @@ const fmtMoney = (n: number, currency: string) =>
 const formatJoined = (iso: string) =>
   new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
-export default async function EmployeeProfilePage() {
-  const me = await api.employees.myProfile();
-  const payslips = await api.employees.myPayslips();
+export default function EmployeeProfilePage() {
+  const { data, loading, error, reload } = useApi(async () => {
+    const [me, payslips] = await Promise.all([
+      api.employees.myProfile(),
+      api.employees.myPayslips(),
+    ]);
+    return { me, payslips };
+  });
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
 
+  const { me, payslips } = data;
   const countryName = CC_TO_NAME[me.country] ?? me.country;
   const ytd = payslips.reduce(
     (acc, p) => ({

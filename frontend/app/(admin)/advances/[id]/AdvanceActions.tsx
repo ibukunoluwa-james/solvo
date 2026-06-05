@@ -1,12 +1,16 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, ApiError } from "../../../_lib/api";
 import type { Advance } from "../../../_lib/types";
 
-export default function AdvanceActions({ advance }: { advance: Advance }) {
-  const router = useRouter();
+export default function AdvanceActions({
+  advance,
+  onChanged,
+}: {
+  advance: Advance;
+  onChanged?: () => void;
+}) {
   const [busy, setBusy] = useState<"approve" | "reject" | "disburse" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +30,7 @@ export default function AdvanceActions({ advance }: { advance: Advance }) {
       } else {
         await api.advances.disburse(advance.id);
       }
-      router.refresh();
+      onChanged?.();
     } catch (err) {
       setError(
         err instanceof ApiError && typeof err.detail === "string"

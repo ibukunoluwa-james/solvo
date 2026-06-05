@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { api } from "../_lib/api";
 
 type NavItem = {
   href: string;
@@ -33,6 +35,24 @@ const SETTINGS_ITEM: NavItem = {
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [company, setCompany] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api.companies
+      .getMe()
+      .then((c) => alive && setCompany(c.name))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function logout() {
+    await api.auth.logout();
+    router.replace("/login");
+  }
 
   const isActive = (href: string) => {
     // Treat /pay-runs/* as active for Pay runs
@@ -74,10 +94,10 @@ export default function Sidebar() {
           className="w-full flex items-center gap-2 px-2 py-[7px] border border-border rounded-[5px] bg-card hover:bg-subtle transition-colors"
         >
           <div className="w-[18px] h-[18px] rounded-[3px] bg-text-primary text-white flex items-center justify-center text-[10px] font-semibold shrink-0">
-            M
+            {company ? company.charAt(0).toUpperCase() : "·"}
           </div>
           <span className="text-[12px] font-medium text-text-primary truncate flex-1 text-left">
-            Mavenly Inc.
+            {company ?? "Your workspace"}
           </span>
           <i className="ti ti-selector text-[14px] text-text-tertiary" />
         </button>
@@ -139,16 +159,24 @@ export default function Sidebar() {
       {/* User block */}
       <div className="border-t border-border px-[10px] py-[10px] flex items-center gap-2">
         <div className="w-6 h-6 rounded-full bg-card border border-border flex items-center justify-center text-[10px] font-semibold text-text-primary shrink-0">
-          SC
+          {company ? company.charAt(0).toUpperCase() : "·"}
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[11.5px] font-medium text-text-primary leading-tight truncate">
-            Sarah Chen
+            {company ?? "—"}
           </div>
           <div className="text-[10px] text-text-quaternary leading-tight truncate">
             Admin
           </div>
         </div>
+        <button
+          type="button"
+          onClick={logout}
+          aria-label="Sign out"
+          className="w-6 h-6 flex items-center justify-center rounded-[5px] text-text-tertiary hover:text-text-primary hover:bg-subtle transition-colors"
+        >
+          <i className="ti ti-logout text-[14px]" />
+        </button>
       </div>
     </aside>
   );

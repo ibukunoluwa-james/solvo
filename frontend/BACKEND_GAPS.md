@@ -199,21 +199,23 @@ so this is moot until §1.3 is decided.
 
 ---
 
-## 4. Auth on server components
+## 4. Auth on server components — RESOLVED (option b)
 
-The data-fetching pages are server components that call `api.*` at render
-time. In mock mode this works immediately. When `NEXT_PUBLIC_USE_MOCK=false`,
-the `Authorization: Bearer <token>` header is read from `localStorage`,
-which only exists on the client.
+The data-fetching pages used to be server components that called `api.*` at
+render time. In mock mode that worked immediately, but with
+`NEXT_PUBLIC_USE_MOCK=false` the `Authorization: Bearer <token>` header is read
+from `localStorage`, which only exists on the client.
 
-**Decision needed before real integration:** either
+**What was done:** the data-fetch pages were converted to **client components**
+(option b) that fetch through the shared `useApi` hook
+(`app/_lib/useApi.tsx`). This matches the api client's documented design
+(tokens in localStorage, Bearer header per call, refresh-on-401) and works
+because the backend sends permissive CORS headers for browser calls. The hook
+renders loading / error states and redirects to `/login` on a missing session
+or a 401.
 
-- (a) Migrate tokens to **httpOnly cookies** (backend sets, browser sends
-  automatically, both server and client get them via `next/headers`'
-  `cookies()`), or
-- (b) Convert the data-fetch pages to **client components** that read
-  localStorage and fetch in `useEffect`.
-
-(a) is the cleaner Next.js 16 idiom. The api client already attaches the
-Bearer header from any source via `getAccessToken()` — only the storage
-medium changes.
+The alternative (a) — migrating tokens to **httpOnly cookies** read on the
+server via `next/headers` `cookies()` — remains the cleaner SSR idiom if the
+app later needs server-rendered authenticated pages, but it would require
+server-side refresh handling (the access token lives 30 min) and was not needed
+here.

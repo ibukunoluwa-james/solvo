@@ -53,7 +53,7 @@ async def request_advance(
             reason=payload.reason,
             description=payload.description,
         )
-        return _to_response(advance)
+        return await _response_for(db, advance.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -138,7 +138,7 @@ async def get_advance(
         if advance.employee_id != current_user.employee_profile.id:
             raise HTTPException(status_code=404, detail="Advance not found")
 
-    return _to_response(advance)
+    return await _response_for(db, advance.id)
 
 
 @router.put("/{advance_id}/approve", response_model=AdvanceResponse)
@@ -161,7 +161,7 @@ async def approve_advance(
             approved_amount=payload.approved_amount,
             employer_note=payload.employer_note,
         )
-        return _to_response(advance)
+        return await _response_for(db, advance.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -185,7 +185,7 @@ async def reject_advance(
             company_id=company.id,
             employer_note=payload.employer_note,
         )
-        return _to_response(advance)
+        return await _response_for(db, advance.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -207,16 +207,33 @@ async def disburse_advance(
             advance_id=advance_id,
             company_id=company.id,
         )
-        return _to_response(advance)
+        return await _response_for(db, advance.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+async def _response_for(db: AsyncSession, advance_id: UUID) -> AdvanceResponse:
+    """
+    Re-load an advance with its employee eager-loaded, then serialize.
+
+    Used by the single-object endpoints. Without the eager load, _to_response
+    would touch the lazy `advance.employee` relationship outside the async
+    greenlet context and raise MissingGreenlet (500). The list endpoint already
+    eager-loads, so it calls _to_response directly.
+    """
+    advance = await db.scalar(
+        select(AdvanceRequest)
+        .options(selectinload(AdvanceRequest.employee))
+        .where(AdvanceRequest.id == advance_id)
+    )
+    if not advance:
+        raise HTTPException(status_code=404, detail="Advance not found")
+    return _to_response(advance)
+
+
 def _to_response(advance: AdvanceRequest) -> AdvanceResponse:
-    """Convert ORM model to response schema."""
-    employee_name = None
-    if hasattr(advance, "employee") and advance.employee:
-        employee_name = advance.employee.full_name
+    """Convert ORM model to response schema. Assumes `employee` is eager-loaded."""
+    employee_name = advance.employee.full_name if advance.employee else None
 
     return AdvanceResponse(
         id=advance.id,

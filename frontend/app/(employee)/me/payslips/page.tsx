@@ -1,6 +1,9 @@
+"use client";
+
 import Header from "../../../_components/Header";
 import { Button, Card } from "../../../_components/ui";
 import { api } from "../../../_lib/api";
+import { useApi, PageStatus } from "../../../_lib/useApi";
 import type { PayrollEntryStatus } from "../../../_lib/types";
 
 const fmtMoney = (n: number, currency: string) =>
@@ -20,8 +23,11 @@ const STATUS_LABEL: Record<PayrollEntryStatus, string> = {
   failed: "Failed",
 };
 
-export default async function PayslipsPage() {
-  const payslips = await api.employees.myPayslips();
+export default function PayslipsPage() {
+  const { data, loading, error, reload } = useApi(() => api.employees.myPayslips());
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
+
+  const payslips = data;
 
   return (
     <>

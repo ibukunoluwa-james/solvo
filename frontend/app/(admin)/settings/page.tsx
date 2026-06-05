@@ -1,9 +1,15 @@
+"use client";
+
 import Header from "../../_components/Header";
 import { api } from "../../_lib/api";
+import { useApi, PageStatus } from "../../_lib/useApi";
 import SettingsForm from "./SettingsForm";
 
-export default async function SettingsPage() {
-  const company = await api.companies.getMe();
+export default function SettingsPage() {
+  const { data, loading, error, reload } = useApi(() => api.companies.getMe());
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
+
+  const company = data;
 
   return (
     <>

@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import Header from "../../_components/Header";
 import { Button, Card } from "../../_components/ui";
 import { api } from "../../_lib/api";
+import { useApi, PageStatus } from "../../_lib/useApi";
 
 const CC_TO_NAME: Record<string, string> = {
   NG: "Nigeria", KE: "Kenya", ZA: "South Africa", EG: "Egypt", GH: "Ghana",
@@ -13,8 +16,11 @@ const fmtMoney = (n: number, currency: string) =>
 const fmtUsd = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-export default async function CompliancePage() {
-  const audit = await api.compliance.auditTrail({ limit: 50 });
+export default function CompliancePage() {
+  const { data, loading, error, reload } = useApi(() => api.compliance.auditTrail({ limit: 50 }));
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
+
+  const audit = data;
 
   // Aggregate per country across all runs
   type CountrySummary = {

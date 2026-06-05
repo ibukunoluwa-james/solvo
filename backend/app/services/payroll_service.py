@@ -201,10 +201,12 @@ class PayrollService:
                 f"Can only execute a previewed run (current: {run.status.value})"
             )
 
-        # Load entries with employee info for banking details
+        # Load entries with employee + user (for the Kora customer email)
         result = await db.execute(
             select(PayrollEntry)
-            .options(selectinload(PayrollEntry.employee))
+            .options(
+                selectinload(PayrollEntry.employee).selectinload(Employee.user)
+            )
             .where(PayrollEntry.payroll_run_id == run_id)
         )
         entries = result.scalars().all()
@@ -213,23 +215,39 @@ class PayrollService:
         kora_transfers: list[KoraTransfer] = []
         for entry in entries:
             emp = entry.employee
-            if not emp.bank_account_number or not emp.bank_code:
+            has_bank = bool(emp.bank_account_number and emp.bank_code)
+            has_wallet = bool(emp.mobile_wallet)
+            if not has_bank and not has_wallet:
                 logger.warning(
-                    f"Skipping {emp.full_name}: missing bank details"
+                    f"Skipping {emp.full_name}: no bank account or mobile wallet"
                 )
                 entry.status = PayrollEntryStatus.failed
                 continue
 
             ref = f"solvo_pay_{run_id.hex[:8]}_{emp.id.hex[:8]}"
-            kora_transfers.append(KoraTransfer(
-                reference=ref,
-                amount=float(entry.net_salary),
-                currency=entry.currency,
-                bank_account=emp.bank_account_number,
-                bank_code=emp.bank_code,
-                account_name=emp.full_name,
-                narration=f"Solvo Payroll {run.period_year}-{run.period_month:02d}",
-            ))
+            narration = f"Solvo Payroll {run.period_year}-{run.period_month:02d}"
+            email = emp.user.email if emp.user else ""
+            if has_bank:
+                kora_transfers.append(KoraTransfer(
+                    reference=ref,
+                    amount=float(entry.net_salary),
+                    currency=entry.currency,
+                    account_name=emp.full_name,
+                    narration=narration,
+                    email=email,
+                    bank_account=emp.bank_account_number,
+                    bank_code=emp.bank_code,
+                ))
+            else:
+                kora_transfers.append(KoraTransfer(
+                    reference=ref,
+                    amount=float(entry.net_salary),
+                    currency=entry.currency,
+                    account_name=emp.full_name,
+                    narration=narration,
+                    email=email,
+                    mobile_number=emp.mobile_wallet,
+                ))
 
         if not kora_transfers:
             raise ValueError("No valid employees to pay (all missing bank details)")
@@ -252,7 +270,8 @@ class PayrollService:
             for transfer_resp in batch_response.transfers:
                 entry = ref_to_entry.get(transfer_resp.reference)
                 if entry:
-                    entry.kora_transfer_id = transfer_resp.kora_reference
+                    # Store the reference we sent (echoed by Kora) so webhooks match.
+                    entry.kora_transfer_id = transfer_resp.kora_reference or transfer_resp.reference
                     if transfer_resp.status in ("success", "completed"):
                         entry.status = PayrollEntryStatus.settled
                     elif transfer_resp.status == "failed":
@@ -260,12 +279,17 @@ class PayrollService:
                     else:
                         entry.status = PayrollEntryStatus.processing
 
-            # Check overall result
-            failed_count = sum(
-                1 for e in entries if e.status == PayrollEntryStatus.failed
-            )
-            if failed_count == len(entries):
+            # Overall result. Real payouts are async (status "processing") and
+            # settle later via webhook, so only mark completed once every entry
+            # is terminal and at least one succeeded.
+            statuses = [e.status for e in entries]
+            if all(s == PayrollEntryStatus.failed for s in statuses):
                 run.status = PayrollRunStatus.failed
+            elif any(
+                s in (PayrollEntryStatus.pending, PayrollEntryStatus.processing)
+                for s in statuses
+            ):
+                run.status = PayrollRunStatus.processing
             else:
                 run.status = PayrollRunStatus.completed
                 run.completed_at = datetime.now(timezone.utc)

@@ -163,7 +163,12 @@ class AdvanceService:
         if not advance:
             raise ValueError("Advance request not found")
 
-        employee = await db.get(Employee, advance.employee_id)
+        # Load employee with their user record (for the Kora customer email).
+        employee = await db.scalar(
+            select(Employee)
+            .options(selectinload(Employee.user))
+            .where(Employee.id == advance.employee_id)
+        )
         if not employee or employee.company_id != company_id:
             raise ValueError("Advance request not found for your company")
 
@@ -172,30 +177,42 @@ class AdvanceService:
                 f"Can only disburse an approved advance (current: {advance.status.value})"
             )
 
-        if not employee.bank_account_number or not employee.bank_code:
+        has_bank = bool(employee.bank_account_number and employee.bank_code)
+        has_wallet = bool(employee.mobile_wallet)
+        if not has_bank and not has_wallet:
             raise ValueError(
-                f"Employee {employee.full_name} has no bank details configured"
+                f"Employee {employee.full_name} has no bank account or mobile wallet"
             )
 
         # Disburse via Kora (net of fee)
         disburse_amount = advance.approved_amount - advance.fee_amount
         ref = f"solvo_adv_{advance_id.hex[:12]}"
 
-        transfer = KoraTransfer(
+        common = dict(
             reference=ref,
             amount=float(disburse_amount),
             currency=advance.currency,
-            bank_account=employee.bank_account_number,
-            bank_code=employee.bank_code,
             account_name=employee.full_name,
             narration=f"Solvo Emergency Advance - {advance.reason}",
+            email=employee.user.email if employee.user else "",
         )
+        if has_bank:
+            transfer = KoraTransfer(
+                **common,
+                bank_account=employee.bank_account_number,
+                bank_code=employee.bank_code,
+            )
+        else:
+            transfer = KoraTransfer(**common, mobile_number=employee.mobile_wallet)
 
         result = await self.kora.initiate_transfer(transfer)
 
-        advance.kora_transfer_id = result.kora_reference
+        # Store the reference we sent so the webhook can match and settle it.
+        advance.kora_transfer_id = result.kora_reference or ref
         if result.status in ("success", "completed"):
             advance.status = AdvanceStatus.disbursed
+        # If "processing" (real async payout), it stays approved until the
+        # webhook flips it to disbursed.
         advance.disbursed_at = datetime.now(timezone.utc)
 
         await db.flush()

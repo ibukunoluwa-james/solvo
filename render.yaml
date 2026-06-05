@@ -35,9 +35,9 @@ services:
       - key: CORS_ORIGINS
         value: "http://localhost:3000"
       # Seed idempotent demo data on first boot (only if DB is empty).
-      # Set to "true" for the demo; safe to leave on (no-op once data exists).
+      # Enabled for the demo; safe to leave on (no-op once data exists).
       - key: SEED_DEMO_DATA
-        value: "false"
+        value: "true"
       # Kora: keep mock mode on until you add real keys in the dashboard.
       - key: KORA_MOCK_MODE
         value: "true"

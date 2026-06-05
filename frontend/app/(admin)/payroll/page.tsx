@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import Header from "../../_components/Header";
 import { Button, Card, Pill, StatStrip } from "../../_components/ui";
 import { api } from "../../_lib/api";
+import { useApi, PageStatus } from "../../_lib/useApi";
 import type { PayrollRun, PayrollStatus } from "../../_lib/types";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -37,10 +40,17 @@ const PILL_LABEL: Record<PayrollStatus, string> = {
 const fmtUsd = (n: number) =>
   "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-export default async function PayrollListPage() {
-  const { runs } = await api.payroll.listRuns({ limit: 50 });
-  const dashboard = await api.companies.getDashboard();
+export default function PayrollListPage() {
+  const { data, loading, error, reload } = useApi(async () => {
+    const [runsResp, dashboard] = await Promise.all([
+      api.payroll.listRuns({ limit: 50 }),
+      api.companies.getDashboard(),
+    ]);
+    return { runs: runsResp.runs, dashboard };
+  });
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
 
+  const { runs, dashboard } = data;
   const completed = runs.filter((r) => r.status === "completed");
   const avgRun = completed.length
     ? Math.round(completed.reduce((s, r) => s + r.total_gross, 0) / completed.length)

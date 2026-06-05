@@ -1,7 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import Header from "../../../_components/Header";
 import { Avatar, Card, Pill } from "../../../_components/ui";
 import { api } from "../../../_lib/api";
+import { useApi, PageStatus } from "../../../_lib/useApi";
 import type { AdvanceStatus } from "../../../_lib/types";
 import AdvanceActions from "./AdvanceActions";
 
@@ -19,12 +23,16 @@ const fmtMoney = (n: number, currency: string) =>
 const fmtDateTime = (iso: string) =>
   new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
-type PageProps = { params: Promise<{ id: string }> };
+export default function AdvanceDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const { data, loading, error, reload } = useApi(async () => {
+    const a = await api.advances.get(id);
+    const employee = await api.employees.get(a.employee_id).catch(() => null);
+    return { a, employee };
+  }, [id]);
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
 
-export default async function AdvanceDetailPage({ params }: PageProps) {
-  const { id } = await params;
-  const a = await api.advances.get(id);
-  const employee = await api.employees.get(a.employee_id).catch(() => null);
+  const { a, employee } = data;
   const pill = STATUS_PILL[a.status];
 
   return (
@@ -140,7 +148,7 @@ export default async function AdvanceDetailPage({ params }: PageProps) {
           {/* Decision sidebar */}
           <Card className="px-[24px] py-[22px]" style={{ position: "sticky", top: "20px", height: "fit-content" }}>
             <div className="label mb-[14px]">Decision</div>
-            <AdvanceActions advance={a} />
+            <AdvanceActions advance={a} onChanged={reload} />
 
             {employee?.bank_account_number && (
               <div className="mt-[22px] pt-[18px] border-t border-border">

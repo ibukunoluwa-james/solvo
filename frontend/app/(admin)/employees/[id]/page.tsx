@@ -1,7 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import Header from "../../../_components/Header";
 import { Avatar, Button, Card, Pill } from "../../../_components/ui";
 import { api } from "../../../_lib/api";
+import { useApi, PageStatus } from "../../../_lib/useApi";
 
 const CC_TO_NAME: Record<string, string> = {
   NG: "Nigeria",
@@ -28,12 +32,12 @@ const TABS = [
   { key: "advances", label: "Advances", active: false },
 ] as const;
 
-type PageProps = { params: Promise<{ id: string }> };
+export default function EmployeeDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const { data, loading, error, reload } = useApi(() => api.employees.get(id), [id]);
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
 
-export default async function EmployeeDetailPage({ params }: PageProps) {
-  const { id } = await params;
-  const e = await api.employees.get(id);
-
+  const e = data;
   const countryName = CC_TO_NAME[e.country] ?? e.country;
   const joined = formatJoined(e.created_at);
 

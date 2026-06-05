@@ -1,7 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import Header from "../../../_components/Header";
 import { Avatar, Button, Card, Pill } from "../../../_components/ui";
 import { api } from "../../../_lib/api";
+import { useApi, PageStatus } from "../../../_lib/useApi";
 import type { PayrollEntry } from "../../../_lib/types";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -20,14 +24,15 @@ const COUNTRY_COLOR: Record<string, string> = {
   NG: "#18181b", KE: "#52525b", ZA: "#a1a1aa", EG: "#d4d4d8",
 };
 
-type PageProps = { params: Promise<{ id: string }> };
+export default function PayRunReviewPage() {
+  const { id } = useParams<{ id: string }>();
+  const { data, loading, error, reload } = useApi(
+    () => Promise.all([api.payroll.getRun(id), api.payroll.previewRun(id)]),
+    [id],
+  );
+  if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
 
-export default async function PayRunReviewPage({ params }: PageProps) {
-  const { id } = await params;
-  const [run, preview] = await Promise.all([
-    api.payroll.getRun(id),
-    api.payroll.previewRun(id),
-  ]);
+  const [run, preview] = data;
 
   // Group entries by country
   const groups = new Map<string, PayrollEntry[]>();
