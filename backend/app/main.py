@@ -43,13 +43,14 @@ from app.rate_limit import limiter
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    App lifespan: create tables on startup (dev only), dispose engine on shutdown.
-    In production, Alembic migrations handle schema changes.
+    App lifespan: create any missing tables on startup, dispose engine on
+    shutdown. Controlled by settings.auto_create_tables — turn it off once
+    Alembic migrations own the schema.
     """
-    if settings.app_env == "development":
+    if settings.auto_create_tables:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables created (dev mode)")
+        logger.info("Database tables ensured (auto_create_tables=on)")
 
     yield
 

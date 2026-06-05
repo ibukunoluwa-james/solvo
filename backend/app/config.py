@@ -8,7 +8,7 @@ with a .env file fallback. All secrets and configurable values live here.
 #reads our secret .env passwords
 
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, field_validator
 from typing import List
 
 
@@ -20,6 +20,30 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://solvo:solvo_secret@localhost:5432/solvo_db",
         description="Async PostgreSQL connection string",
     )
+
+    # When True, create any missing tables on startup. Convenient for demos /
+    # first deploy where no Alembic migration has been run yet. Set to False
+    # once migrations own the schema.
+    auto_create_tables: bool = True
+
+    @field_validator("database_url")
+    @classmethod
+    def _force_async_driver(cls, v: str) -> str:
+        """
+        Managed Postgres providers (Render, Supabase, Neon, Heroku) hand out a
+        sync DSN — ``postgres://`` or ``postgresql://``. Our engine is async and
+        needs the asyncpg driver, so rewrite the scheme. Also drop libpq-only
+        query params (e.g. ``?sslmode=require``) that asyncpg does not accept;
+        Render's *internal* URL has none, so this only matters if you paste the
+        external URL.
+        """
+        if v.startswith("postgres://"):
+            v = "postgresql+asyncpg://" + v[len("postgres://"):]
+        elif v.startswith("postgresql://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+        if v.startswith("postgresql+asyncpg://") and "?" in v:
+            v = v.split("?", 1)[0]
+        return v
 
     # ── JWT Auth ──
     secret_key: str = Field(

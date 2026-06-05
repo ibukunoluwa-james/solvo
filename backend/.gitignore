@@ -41,3 +41,7 @@ htmlcov/
 .idea/
 *.swp
 *.swo
+
+# Local SQLite databases
+*.db
+*.sqlite3
