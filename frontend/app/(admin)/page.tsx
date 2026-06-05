@@ -1,57 +1,56 @@
 import Header from "../_components/Header";
 import { Button, Card, StatStrip } from "../_components/ui";
+import { api } from "../_lib/api";
+import type { PayrollRun } from "../_lib/types";
 
-type ActivityIcon = "settled" | "advance" | "onboard" | "retry";
-
-const ACTIVITY: {
-  icon: ActivityIcon;
-  text: string;
-  amount: string;
-}[] = [
-  {
-    icon: "settled",
-    text: "Payroll settled — Adaeze Okonkwo",
-    amount: "₦1,420,000",
-  },
-  {
-    icon: "advance",
-    text: "Advance approved — Faith Mwangi",
-    amount: "KSh 42,000",
-  },
-  { icon: "onboard", text: "New hire onboarded — Yusuf Adeyemi", amount: "—" },
-  {
-    icon: "retry",
-    text: "Bank rejected, retrying — Thabo Dlamini",
-    amount: "R 18,200",
-  },
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-const ACTIVITY_ICON: Record<ActivityIcon, { icon: string; color: string }> = {
-  settled: { icon: "ti-circle-check", color: "text-success" },
-  advance: { icon: "ti-arrow-up-right", color: "text-text-secondary" },
-  onboard: { icon: "ti-user-plus", color: "text-text-secondary" },
-  retry: { icon: "ti-alert-circle", color: "text-warning" },
+const periodLabel = (r: PayrollRun) => `${MONTHS[r.period_month - 1]} 1, ${r.period_year}`;
+
+const fmtUsd = (n: number) =>
+  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+const CC_TO_NAME: Record<string, string> = {
+  NG: "Nigeria",
+  KE: "Kenya",
+  ZA: "South Africa",
+  EG: "Egypt",
+  GH: "Ghana",
+  RW: "Rwanda",
+  UG: "Uganda",
+  TZ: "Tanzania",
 };
 
-const COUNTRIES: {
-  name: string;
-  height: number;
-  color: string;
-  amount: string;
-}[] = [
-  { name: "Nigeria", height: 18, color: "#18181b", amount: "$76,420" },
-  { name: "Kenya", height: 14, color: "#52525b", amount: "$54,180" },
-  { name: "South Africa", height: 11, color: "#a1a1aa", amount: "$32,910" },
-  { name: "Egypt", height: 7, color: "#d4d4d8", amount: "$20,740" },
-];
+export default async function OverviewPage() {
+  const [dashboard, runsResp, pendingAdvances] = await Promise.all([
+    api.companies.getDashboard(),
+    api.payroll.listRuns({ limit: 20 }),
+    api.advances.list({ status_filter: "pending", limit: 10 }),
+  ]);
 
-export default function OverviewPage() {
+  const draftRun = runsResp.runs.find((r) => r.status === "draft");
+
+  // By-country: aggregate gross_salary from /employees per country.
+  const empList = await api.employees.list({ limit: 200 });
+  const byCountry = new Map<string, number>();
+  for (const e of empList.employees) {
+    byCountry.set(e.country, (byCountry.get(e.country) ?? 0) + e.gross_salary);
+  }
+  const countries = Array.from(byCountry.entries())
+    .map(([code, sum]) => ({ code, name: CC_TO_NAME[code] ?? code, sum }))
+    .sort((a, b) => b.sum - a.sum);
+  const maxSum = countries[0]?.sum ?? 1;
+  const COUNTRY_COLORS = ["#18181b", "#52525b", "#a1a1aa", "#d4d4d8"];
+
   return (
     <>
       <Header
         title="Overview"
         right={
-          <Button icon="ti-plus" variant="primary">
+          <Button icon="ti-plus" variant="primary" href="/payroll/new">
             New pay run
           </Button>
         }
@@ -59,14 +58,18 @@ export default function OverviewPage() {
 
       <main className="flex-1 px-8 pt-7 pb-10 overflow-auto">
         <div className="flex flex-col gap-[20px] max-w-[1280px]">
-          {/* Next-pay-run hero card */}
+          {/* Next-pay-run hero */}
           <Card className="px-[32px] py-[28px]">
             <div className="flex items-center gap-2 mb-[18px]">
               <span className="label">Next pay run</span>
-              <span className="w-[3px] h-[3px] rounded-full bg-text-quaternary" />
-              <span className="text-[11px] font-medium text-text-tertiary">
-                Jun 1
-              </span>
+              {draftRun && (
+                <>
+                  <span className="w-[3px] h-[3px] rounded-full bg-text-quaternary" />
+                  <span className="text-[11px] font-medium text-text-tertiary">
+                    {periodLabel(draftRun)}
+                  </span>
+                </>
+              )}
             </div>
             <div className="flex items-end justify-between gap-6">
               <div>
@@ -74,84 +77,70 @@ export default function OverviewPage() {
                   className="text-[36px] font-medium tabular text-text-primary"
                   style={{ letterSpacing: "-0.025em", lineHeight: 1 }}
                 >
-                  $184,250
+                  {draftRun ? fmtUsd(draftRun.total_gross) : "—"}
                 </div>
                 <div className="text-[12.5px] text-text-tertiary mt-[10px] tabular">
-                  40 people · 4 countries
+                  {dashboard.total_employees} people · {dashboard.countries_covered.length} countries
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="secondary">Edit</Button>
-                <Button variant="primary" href="/payroll/june-2026">
-                  Review &amp; approve
+                <Button variant="secondary" href="/payroll">
+                  Edit
                 </Button>
+                {draftRun && (
+                  <Button variant="primary" href={`/payroll/${draftRun.id}`}>
+                    Review &amp; approve
+                  </Button>
+                )}
               </div>
             </div>
           </Card>
 
-          {/* Three-stat strip */}
+          {/* Stats */}
           <StatStrip
             cells={[
-              { label: "Paid YTD", value: "$892,140" },
-              { label: "Headcount", value: "40" },
-              {
-                label: "Settlement",
-                value: (
-                  <>
-                    1.8{" "}
-                    <span className="text-[13px] text-text-tertiary font-normal">
-                      sec
-                    </span>
-                  </>
-                ),
-              },
+              { label: "Paid YTD", value: fmtUsd(dashboard.total_disbursed) },
+              { label: "Headcount", value: dashboard.total_employees },
+              { label: "Pending advances", value: dashboard.pending_advances },
             ]}
           />
 
           {/* Two-column row */}
-          <div
-            className="grid gap-[20px]"
-            style={{ gridTemplateColumns: "1.5fr 1fr" }}
-          >
-            {/* Recent activity */}
+          <div className="grid gap-[20px]" style={{ gridTemplateColumns: "1.5fr 1fr" }}>
+            {/* Pending advances feed (closest live data) */}
             <Card>
-              <div className="px-[22px] py-[18px] border-b border-border-subtle">
+              <div className="px-[22px] py-[18px] border-b border-border-subtle flex items-center justify-between">
                 <h3 className="text-[12.5px] font-medium text-text-primary leading-none">
-                  Recent activity
+                  Pending advances
                 </h3>
+                <span className="text-[11px] text-text-tertiary">
+                  {pendingAdvances.total} awaiting review
+                </span>
               </div>
-              <div>
-                {ACTIVITY.map((row, i) => {
-                  const meta = ACTIVITY_ICON[row.icon];
-                  return (
-                    <div
-                      key={i}
-                      className={`grid items-center px-[22px] py-[16px] ${
-                        i < ACTIVITY.length - 1
-                          ? "border-b border-border-subtle"
-                          : ""
-                      }`}
-                      style={{
-                        gridTemplateColumns: "16px 1fr auto",
-                        columnGap: "12px",
-                      }}
-                    >
-                      <i
-                        className={`ti ${meta.icon} text-[16px] ${meta.color}`}
-                      />
-                      <div className="text-[12.5px] text-text-primary truncate">
-                        {row.text}
-                      </div>
-                      <div className="text-[12.5px] tabular text-text-tertiary">
-                        {row.amount}
-                      </div>
+              {pendingAdvances.advances.length === 0 ? (
+                <div className="px-[22px] py-[28px] text-[12px] text-text-tertiary text-center">
+                  No pending advances
+                </div>
+              ) : (
+                pendingAdvances.advances.slice(0, 4).map((a, i, arr) => (
+                  <div
+                    key={a.id}
+                    className={`grid items-center px-[22px] py-[16px] ${i < arr.length - 1 ? "border-b border-border-subtle" : ""}`}
+                    style={{ gridTemplateColumns: "16px 1fr auto", columnGap: "12px" }}
+                  >
+                    <i className="ti ti-arrow-up-right text-[16px] text-text-secondary" />
+                    <div className="text-[12.5px] text-text-primary truncate">
+                      Advance requested — {a.employee_name ?? a.employee_id}
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="text-[12.5px] tabular text-text-tertiary">
+                      {a.currency} {a.amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                ))
+              )}
             </Card>
 
-            {/* By country */}
+            {/* By-country — derived from /employees */}
             <Card>
               <div className="px-[22px] py-[18px] border-b border-border-subtle">
                 <h3 className="text-[12.5px] font-medium text-text-primary leading-none">
@@ -159,31 +148,33 @@ export default function OverviewPage() {
                 </h3>
               </div>
               <div className="px-[22px] py-[18px] flex flex-col gap-[14px]">
-                {COUNTRIES.map((c) => (
-                  <div
-                    key={c.name}
-                    className="grid items-center"
-                    style={{ gridTemplateColumns: "1fr auto", columnGap: "12px" }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span
-                        style={{
-                          width: 5,
-                          height: c.height,
-                          background: c.color,
-                          display: "inline-block",
-                          borderRadius: 1,
-                        }}
-                      />
-                      <span className="text-[12.5px] text-text-primary">
-                        {c.name}
+                {countries.map((c, i) => {
+                  const height = Math.max(6, Math.round((c.sum / maxSum) * 18));
+                  const color = COUNTRY_COLORS[Math.min(i, COUNTRY_COLORS.length - 1)];
+                  return (
+                    <div
+                      key={c.code}
+                      className="grid items-center"
+                      style={{ gridTemplateColumns: "1fr auto", columnGap: "12px" }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          style={{
+                            width: 5,
+                            height,
+                            background: color,
+                            display: "inline-block",
+                            borderRadius: 1,
+                          }}
+                        />
+                        <span className="text-[12.5px] text-text-primary">{c.name}</span>
+                      </div>
+                      <span className="text-[12.5px] tabular text-text-tertiary">
+                        {c.code}
                       </span>
                     </div>
-                    <span className="text-[12.5px] tabular text-text-primary">
-                      {c.amount}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </Card>
           </div>

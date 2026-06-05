@@ -1,107 +1,56 @@
 import Link from "next/link";
 import Header from "../../../_components/Header";
 import { Avatar, Button, Card, Pill } from "../../../_components/ui";
+import { api } from "../../../_lib/api";
+import type { PayrollEntry } from "../../../_lib/types";
 
-type Row = {
-  name: string;
-  grossUsd: number;
-  withholdingUsd: number;
-  netLocal: string;
-  costUsd: number;
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+const CC_TO_NAME: Record<string, string> = {
+  NG: "Nigeria", KE: "Kenya", ZA: "South Africa", EG: "Egypt", GH: "Ghana",
 };
 
-type Group = {
-  country: string;
-  color: string;
-  people: number;
-  fxLine: string;
-  subtotal: string;
-  rows: Row[];
+const fmtMoney = (n: number, currency: string) =>
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n) + " " + currency;
+
+const fmtUsd = (n: number) =>
+  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+const COUNTRY_COLOR: Record<string, string> = {
+  NG: "#18181b", KE: "#52525b", ZA: "#a1a1aa", EG: "#d4d4d8",
 };
 
-const GROUPS: Group[] = [
-  {
-    country: "Nigeria",
-    color: "#18181b",
-    people: 18,
-    fxLine: "1 USD = 1,548 NGN",
-    subtotal: "$76,420",
-    rows: [
-      {
-        name: "Adaeze Okonkwo",
-        grossUsd: 6200,
-        withholdingUsd: 1240,
-        netLocal: "₦7,675,920",
-        costUsd: 5147,
-      },
-      {
-        name: "Yusuf Adeyemi",
-        grossUsd: 5800,
-        withholdingUsd: 1160,
-        netLocal: "₦7,180,320",
-        costUsd: 4814,
-      },
-      {
-        name: "Chiamaka Eze",
-        grossUsd: 5100,
-        withholdingUsd: 1020,
-        netLocal: "₦6,313,680",
-        costUsd: 4230,
-      },
-    ],
-  },
-  {
-    country: "Kenya",
-    color: "#52525b",
-    people: 12,
-    fxLine: "1 USD = 129.4 KES",
-    subtotal: "$54,180",
-    rows: [
-      {
-        name: "Faith Mwangi",
-        grossUsd: 5400,
-        withholdingUsd: 1080,
-        netLocal: "KSh 559,008",
-        costUsd: 4476,
-      },
-      {
-        name: "Aisha Otieno",
-        grossUsd: 4900,
-        withholdingUsd: 980,
-        netLocal: "KSh 507,232",
-        costUsd: 4062,
-      },
-    ],
-  },
-];
+type PageProps = { params: Promise<{ id: string }> };
 
-const fmtUsd = (n: number, opts: Intl.NumberFormatOptions = {}) =>
-  n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-    ...opts,
-  });
+export default async function PayRunReviewPage({ params }: PageProps) {
+  const { id } = await params;
+  const [run, preview] = await Promise.all([
+    api.payroll.getRun(id),
+    api.payroll.previewRun(id),
+  ]);
 
-export default function PayRunReviewPage() {
+  // Group entries by country
+  const groups = new Map<string, PayrollEntry[]>();
+  for (const e of preview.entries) {
+    const cc = e.employee_country ?? "??";
+    if (!groups.has(cc)) groups.set(cc, []);
+    groups.get(cc)!.push(e);
+  }
+
+  const periodLabel = `${MONTHS[run.period_month - 1]} ${run.period_year}`;
+
   return (
     <>
       <Header
         left={
           <div className="flex items-center gap-2 min-w-0">
-            <Link
-              href="/payroll"
-              className="text-[13px] text-text-tertiary hover:text-text-secondary"
-            >
+            <Link href="/payroll" className="text-[13px] text-text-tertiary hover:text-text-secondary">
               Pay runs
             </Link>
             <i className="ti ti-chevron-right text-[12px] text-text-quaternary" />
-            <span className="text-[13px] font-medium text-text-primary">
-              June 2026 · Run #6
-            </span>
-            <Pill tone="info" className="ml-2">
-              Draft
+            <span className="text-[13px] font-medium text-text-primary">{periodLabel}</span>
+            <Pill tone={run.status === "completed" ? "success" : "info"} className="ml-2">
+              {run.status.charAt(0).toUpperCase() + run.status.slice(1)}
             </Pill>
           </div>
         }
@@ -124,58 +73,128 @@ export default function PayRunReviewPage() {
                 columnGap: "20px",
               }}
             >
-              <SummaryCell label="Total to disburse" value="$184,250.00" big />
+              <SummaryCell label="Total net" value={fmtUsd(preview.total_net)} big />
               <Divider />
-              <SummaryCell label="Taxes withheld" value="$42,180" />
+              <SummaryCell label="Taxes withheld" value={fmtUsd(preview.total_tax)} />
               <Divider />
-              <SummaryCell label="FX cost" value="$1,476" />
+              <SummaryCell label="Pension" value={fmtUsd(preview.total_pension)} />
               <Divider />
-              <SummaryCell label="Solvo fee" value="$1,106" />
+              <SummaryCell label="Total gross" value={fmtUsd(preview.total_gross)} />
             </div>
           </Card>
 
-          {/* Compliance checks */}
-          <Card
-            className="grid divide-x divide-border"
-            style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}
-          >
-            <ComplianceCheck
-              title="Compliance"
-              subtitle="All withholdings calculated."
-            />
-            <ComplianceCheck
-              title="FX rates locked"
-              subtitle="Valid until disbursement."
-            />
-            <ComplianceCheck
-              title="Bank details"
-              subtitle="40 of 40 verified."
-            />
+          {/* Tax summary strip */}
+          <Card>
+            <div className="px-[22px] py-[16px] border-b border-border">
+              <h3 className="text-[12.5px] font-medium text-text-primary leading-none">
+                Tax summary by authority
+              </h3>
+            </div>
+            <div className="px-[22px] py-[14px] flex flex-wrap gap-x-6 gap-y-3">
+              {preview.tax_summary.map((t, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <i className="ti ti-circle-check text-[14px] text-success" />
+                  <span className="text-[12px] text-text-secondary">
+                    {t.country} · {t.authority} · {t.tax_type}
+                  </span>
+                  <span className="text-[12px] tabular text-text-primary font-medium">
+                    {fmtMoney(t.total_amount, t.currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
           </Card>
 
           {/* Payroll lines */}
           <Card className="overflow-hidden">
-            {/* Card header */}
             <div className="flex items-center justify-between px-[24px] py-[16px] border-b border-border">
               <h3 className="text-[12.5px] font-medium text-text-primary leading-none">
                 Payroll lines
               </h3>
               <span className="text-[11.5px] text-text-tertiary leading-none">
-                Grouped by country
+                {preview.entries.length} of {preview.employee_count} loaded · grouped by country
               </span>
             </div>
 
-            {GROUPS.map((g) => (
-              <CountryGroup key={g.country} group={g} />
-            ))}
+            {Array.from(groups.entries()).map(([cc, rows]) => {
+              const subtotalUsd = rows.reduce((s, r) => s + r.gross_salary, 0); // local currency totals — best we can show without FX
+              const localCurrency = rows[0]?.currency ?? "";
+              return (
+                <div key={cc}>
+                  <div className="bg-muted border-b border-border px-[24px] py-[11px] flex items-center gap-3">
+                    <span
+                      style={{
+                        width: 5,
+                        height: 14,
+                        background: COUNTRY_COLOR[cc] ?? "#71717a",
+                        display: "inline-block",
+                        borderRadius: 1,
+                      }}
+                    />
+                    <span className="text-[11.5px] font-medium text-text-primary">
+                      {CC_TO_NAME[cc] ?? cc}
+                    </span>
+                    <span className="text-[11px] text-text-tertiary">· {rows.length} people</span>
+                    <div className="flex-1" />
+                    <span className="text-[11.5px] font-medium text-text-primary tabular ml-3">
+                      {fmtMoney(subtotalUsd, localCurrency)}
+                    </span>
+                  </div>
 
-            {/* Collapsed groups */}
-            <div className="px-[24px] py-[10px] bg-muted border-t border-border flex items-center gap-2">
-              <i className="ti ti-chevron-down text-[12px] text-text-tertiary" />
-              <span className="text-[11px] text-text-tertiary">
-                + 9 more · South Africa · Egypt
-              </span>
-            </div>
+                  <div
+                    className="grid items-center px-[24px] py-[10px] border-b border-border text-text-tertiary"
+                    style={{
+                      gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr",
+                      columnGap: "16px",
+                      fontSize: "10.5px",
+                      fontWeight: 500,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    <div>Employee</div>
+                    <div className="text-right">Gross</div>
+                    <div className="text-right">PAYE</div>
+                    <div className="text-right">Pension</div>
+                    <div className="text-right">Net</div>
+                  </div>
+
+                  {rows.map((r, i) => (
+                    <div
+                      key={r.id}
+                      className={`grid items-center px-[24px] py-[13px] ${i < rows.length - 1 ? "border-b border-border-subtle" : ""}`}
+                      style={{
+                        gridTemplateColumns: "2fr 1.1fr 1.1fr 1.1fr 1.1fr",
+                        columnGap: "16px",
+                      }}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar
+                          name={r.employee_name ?? "??"}
+                          country={CC_TO_NAME[r.employee_country ?? ""] ?? ""}
+                          size={26}
+                        />
+                        <span className="text-[12.5px] text-text-primary truncate">
+                          {r.employee_name ?? r.employee_id}
+                        </span>
+                      </div>
+                      <div className="text-[12.5px] tabular text-text-primary text-right">
+                        {fmtMoney(r.gross_salary, r.currency)}
+                      </div>
+                      <div className="text-[12.5px] tabular text-text-tertiary text-right">
+                        −{fmtMoney(r.paye_tax, r.currency)}
+                      </div>
+                      <div className="text-[12.5px] tabular text-text-tertiary text-right">
+                        −{fmtMoney(r.pension_employee, r.currency)}
+                      </div>
+                      <div className="text-[12.5px] tabular font-medium text-text-primary text-right">
+                        {fmtMoney(r.net_salary, r.currency)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </Card>
         </div>
       </main>
@@ -192,139 +211,15 @@ function Divider() {
   );
 }
 
-function SummaryCell({
-  label,
-  value,
-  big = false,
-}: {
-  label: string;
-  value: string;
-  big?: boolean;
-}) {
+function SummaryCell({ label, value, big = false }: { label: string; value: string; big?: boolean }) {
   return (
     <div>
       <div className="label mb-[8px]">{label}</div>
       <div
-        className={`${
-          big ? "text-[28px]" : "text-[18px]"
-        } font-medium text-text-primary tabular leading-none`}
+        className={`${big ? "text-[28px]" : "text-[18px]"} font-medium text-text-primary tabular leading-none`}
         style={{ letterSpacing: big ? "-0.02em" : "-0.015em" }}
       >
         {value}
-      </div>
-    </div>
-  );
-}
-
-function ComplianceCheck({
-  title,
-  subtitle,
-}: {
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <div className="flex items-start gap-[11px] px-[22px] py-[16px]">
-      <i className="ti ti-circle-check text-[18px] text-success mt-[1px]" />
-      <div className="min-w-0">
-        <div className="text-[12.5px] font-medium text-text-primary leading-tight">
-          {title}
-        </div>
-        <div className="text-[11.5px] text-text-tertiary leading-tight mt-[3px]">
-          {subtitle}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CountryGroup({ group }: { group: Group }) {
-  return (
-    <div>
-      {/* Country group header */}
-      <div className="bg-muted border-b border-border px-[24px] py-[11px] flex items-center gap-3">
-        <span
-          style={{
-            width: 5,
-            height: 14,
-            background: group.color,
-            display: "inline-block",
-            borderRadius: 1,
-          }}
-        />
-        <span className="text-[11.5px] font-medium text-text-primary">
-          {group.country}
-        </span>
-        <span className="text-[11px] text-text-tertiary">
-          · {group.people} people
-        </span>
-        <div className="flex-1" />
-        <span className="text-[11px] text-text-tertiary tabular">
-          {group.fxLine}
-        </span>
-        <span className="text-[11.5px] font-medium text-text-primary tabular ml-3">
-          {group.subtotal}
-        </span>
-      </div>
-
-      {/* Sub-header */}
-      <div
-        className="grid items-center px-[24px] py-[10px] border-b border-border text-text-tertiary"
-        style={{
-          gridTemplateColumns: "2fr 1.1fr 1.1fr 1.3fr 1fr",
-          columnGap: "16px",
-          fontSize: "10.5px",
-          fontWeight: 500,
-          letterSpacing: "0.04em",
-          textTransform: "uppercase",
-        }}
-      >
-        <div>Employee</div>
-        <div className="text-right">Gross (USD)</div>
-        <div className="text-right">Withholding</div>
-        <div className="text-right">Net (local)</div>
-        <div className="text-right">Cost (USD)</div>
-      </div>
-
-      {/* Data rows */}
-      {group.rows.map((r, i) => (
-        <div
-          key={r.name}
-          className={`grid items-center px-[24px] py-[13px] ${
-            i < group.rows.length - 1 ? "border-b border-border-subtle" : ""
-          }`}
-          style={{
-            gridTemplateColumns: "2fr 1.1fr 1.1fr 1.3fr 1fr",
-            columnGap: "16px",
-          }}
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <Avatar name={r.name} country={group.country} size={26} />
-            <span className="text-[12.5px] text-text-primary truncate">
-              {r.name}
-            </span>
-          </div>
-          <div className="text-[12.5px] tabular text-text-primary text-right">
-            {fmtUsd(r.grossUsd)}
-          </div>
-          <div className="text-[12.5px] tabular text-text-tertiary text-right">
-            {fmtUsd(r.withholdingUsd)}
-          </div>
-          <div className="text-[12.5px] tabular text-text-primary text-right">
-            {r.netLocal}
-          </div>
-          <div className="text-[12.5px] tabular font-medium text-text-primary text-right">
-            {fmtUsd(r.costUsd)}
-          </div>
-        </div>
-      ))}
-
-      {/* Collapsed-in-group indicator */}
-      <div className="px-[24px] py-[10px] bg-muted border-b border-border flex items-center gap-2">
-        <i className="ti ti-chevron-down text-[12px] text-text-tertiary" />
-        <span className="text-[11px] text-text-tertiary">
-          + {group.people - group.rows.length} more
-        </span>
       </div>
     </div>
   );

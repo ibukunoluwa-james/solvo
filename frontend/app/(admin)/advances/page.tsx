@@ -1,74 +1,35 @@
 import Link from "next/link";
 import Header from "../../_components/Header";
 import { Avatar, Button, Card, Pill, StatStrip } from "../../_components/ui";
+import { api } from "../../_lib/api";
+import type { Advance } from "../../_lib/types";
 
-type Signal = { kind: "positive" | "concern"; text: string };
+const fmtMoney = (n: number, currency: string) =>
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n) + " " + currency;
 
-type Pending = {
-  name: string;
-  cityRole: string;
-  country: string;
-  amountUsd: number;
-  monthlyNetUsd: number;
-  pctOfNet: number;
-  requestedAgo: string;
-  signals: Signal[];
+const relTime = (iso: string) => {
+  const d = new Date(iso).getTime();
+  const now = new Date("2026-06-04T00:00:00Z").getTime();
+  const min = Math.round((now - d) / 60000);
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} hr ago`;
+  const days = Math.round(h / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 };
 
-const PENDING: Pending[] = [
-  {
-    name: "Adaeze Okonkwo",
-    cityRole: "Lagos, Nigeria · Engineer",
-    country: "Nigeria",
-    amountUsd: 1201,
-    monthlyNetUsd: 2502,
-    pctOfNet: 48,
-    requestedAgo: "2 hours ago",
-    signals: [
-      { kind: "positive", text: "18 months tenure · 6 prior advances repaid" },
-      { kind: "concern", text: "Requesting 48% of May net — above 40% threshold" },
-      { kind: "positive", text: "No active garnishments or holds" },
-    ],
-  },
-  {
-    name: "Faith Mwangi",
-    cityRole: "Nairobi, Kenya · Designer",
-    country: "Kenya",
-    amountUsd: 540,
-    monthlyNetUsd: 1980,
-    pctOfNet: 27,
-    requestedAgo: "5 hours ago",
-    signals: [
-      { kind: "positive", text: "11 months tenure · 3 prior advances repaid" },
-      { kind: "positive", text: "Within auto-rules but flagged: first request this quarter" },
-      { kind: "positive", text: "Bank verified · last payout settled in 1.1s" },
-    ],
-  },
-];
+export default async function AdvancesPage() {
+  const [allResp, pendingResp, approvedResp, disbursedResp] = await Promise.all([
+    api.advances.list({ limit: 50 }),
+    api.advances.list({ status_filter: "pending", limit: 20 }),
+    api.advances.list({ status_filter: "approved", limit: 20 }),
+    api.advances.list({ status_filter: "disbursed", limit: 20 }),
+  ]);
 
-type AutoRow = {
-  name: string;
-  country: string;
-  amountUsd: number;
-  pctOfNet: number;
-  time: string;
-};
+  const monthSum = allResp.advances.reduce((s, a) => s + a.amount, 0);
+  // Show sum in any one currency for the demo — choose USD-ish stand-in
+  const display = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 
-const AUTO: AutoRow[] = [
-  { name: "Lerato Khumalo", country: "South Africa", amountUsd: 410, pctOfNet: 14, time: "2 days ago" },
-  { name: "Mohamed Hassan", country: "Egypt", amountUsd: 620, pctOfNet: 22, time: "3 days ago" },
-  { name: "Aisha Otieno", country: "Kenya", amountUsd: 380, pctOfNet: 18, time: "4 days ago" },
-  { name: "Yusuf Adeyemi", country: "Nigeria", amountUsd: 720, pctOfNet: 19, time: "5 days ago" },
-];
-
-const fmtUsd = (n: number) =>
-  n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-  });
-
-export default function AdvancesPage() {
   return (
     <>
       <Header
@@ -82,87 +43,81 @@ export default function AdvancesPage() {
 
       <main className="flex-1 px-8 pt-7 pb-10 overflow-auto">
         <div className="flex flex-col gap-[20px] max-w-[1280px]">
-          {/* Four-stat strip */}
           <StatStrip
             cells={[
-              { label: "Advanced this month", value: "$8,420" },
-              { label: "Auto-approved", value: "7 / 9" },
-              { label: "Awaiting review", value: <span className="text-warning">2</span> },
-              { label: "Default rate", value: "0.0 %" },
+              { label: "All requests", value: allResp.total },
+              { label: "Pending", value: <span className="text-warning">{pendingResp.total}</span> },
+              { label: "Approved", value: approvedResp.total },
+              { label: "Disbursed", value: disbursedResp.total },
             ]}
           />
 
           {/* Status segments */}
           <div className="flex items-center gap-1 -mt-[6px] mb-[-6px]">
             <Chip active>
-              Pending <span className="tabular text-text-tertiary ml-[2px]">2</span>
+              Pending <span className="tabular text-text-tertiary ml-[2px]">{pendingResp.total}</span>
             </Chip>
             <Chip>
-              Approved <span className="tabular text-text-tertiary/80 ml-[2px]">7</span>
+              Approved <span className="tabular text-text-tertiary/80 ml-[2px]">{approvedResp.total}</span>
             </Chip>
             <Chip>
-              Repaying <span className="tabular text-text-tertiary/80 ml-[2px]">12</span>
+              Disbursed <span className="tabular text-text-tertiary/80 ml-[2px]">{disbursedResp.total}</span>
             </Chip>
           </div>
 
-          {/* Pending review cards */}
-          <div
-            className="grid"
-            style={{ gridTemplateColumns: "1fr 1fr", gap: "16px" }}
-          >
-            {PENDING.map((p) => (
-              <Link
-                key={p.name}
-                href={`/advances/${p.name.toLowerCase().replace(/\s+/g, "-")}`}
-                className="block focus:outline-none"
-              >
-                <PendingCard item={p} />
-              </Link>
-            ))}
-          </div>
+          {/* Pending cards */}
+          {pendingResp.advances.length > 0 && (
+            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+              {pendingResp.advances.slice(0, 4).map((a) => (
+                <PendingCard key={a.id} item={a} />
+              ))}
+            </div>
+          )}
 
-          {/* Recently auto-approved */}
+          {/* Disbursed table */}
           <Card className="overflow-hidden">
             <div className="flex items-center justify-between px-[22px] py-[16px] border-b border-border">
               <h3 className="text-[12.5px] font-medium text-text-primary leading-none">
-                Recently auto-approved
+                Recently disbursed
               </h3>
               <span className="text-[11px] text-text-tertiary leading-none">
-                Within rules · no review needed
+                {disbursedResp.total} total
               </span>
             </div>
-
-            {AUTO.map((r, i) => (
-              <div
-                key={r.name}
-                className={`grid items-center px-[22px] py-[14px] ${
-                  i < AUTO.length - 1 ? "border-b border-border-subtle" : ""
-                }`}
-                style={{
-                  gridTemplateColumns: "2fr 1.2fr 1fr 1fr 80px",
-                  columnGap: "16px",
-                }}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <Avatar name={r.name} country={r.country} size={26} />
-                  <span className="text-[12.5px] text-text-primary truncate">
-                    {r.name}
-                  </span>
-                </div>
-                <div className="text-[12.5px] text-text-secondary">
-                  {r.country}
-                </div>
-                <div className="text-[12.5px] tabular text-text-primary text-right">
-                  {fmtUsd(r.amountUsd)}
-                </div>
-                <div className="text-[12.5px] tabular text-text-tertiary text-right">
-                  {r.pctOfNet}%
-                </div>
-                <div className="text-[12px] tabular text-text-tertiary text-right">
-                  {r.time}
-                </div>
+            {disbursedResp.advances.length === 0 ? (
+              <div className="px-[22px] py-[20px] text-[12px] text-text-tertiary">
+                No disbursed advances yet
               </div>
-            ))}
+            ) : (
+              disbursedResp.advances.map((a, i, arr) => (
+                <Link
+                  key={a.id}
+                  href={`/advances/${a.id}`}
+                  className={`grid items-center px-[22px] py-[14px] hover:bg-canvas transition-colors ${i < arr.length - 1 ? "border-b border-border-subtle" : ""}`}
+                  style={{
+                    gridTemplateColumns: "2fr 1.2fr 1.2fr 1fr 100px",
+                    columnGap: "16px",
+                  }}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar name={a.employee_name ?? ""} size={26} />
+                    <span className="text-[12.5px] text-text-primary truncate">
+                      {a.employee_name ?? a.employee_id}
+                    </span>
+                  </div>
+                  <div className="text-[12.5px] text-text-secondary capitalize">{a.reason}</div>
+                  <div className="text-[12.5px] tabular text-text-primary text-right">
+                    {fmtMoney(a.amount, a.currency)}
+                  </div>
+                  <div className="text-[12.5px] tabular text-text-tertiary text-right">
+                    Fee {fmtMoney(a.fee_amount, a.currency)}
+                  </div>
+                  <div className="text-[12px] tabular text-text-tertiary text-right">
+                    {a.disbursed_at ? relTime(a.disbursed_at) : "—"}
+                  </div>
+                </Link>
+              ))
+            )}
           </Card>
         </div>
       </main>
@@ -170,81 +125,56 @@ export default function AdvancesPage() {
   );
 }
 
-function PendingCard({ item }: { item: Pending }) {
+function PendingCard({ item }: { item: Advance }) {
   return (
-    <Card className="overflow-hidden">
-      {/* Header with warning-soft tint */}
-      <div className="px-[20px] py-[14px] bg-warning-bg-soft border-b border-border flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <Avatar name={item.name} country={item.country} size={32} />
-          <div className="min-w-0">
-            <div className="text-[13px] font-medium text-text-primary leading-tight truncate">
-              {item.name}
-            </div>
-            <div className="text-[11px] text-text-tertiary leading-tight truncate">
-              {item.cityRole}
+    <Link href={`/advances/${item.id}`} className="block focus:outline-none">
+      <Card className="overflow-hidden">
+        <div className="px-[20px] py-[14px] bg-warning-bg-soft border-b border-border flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Avatar name={item.employee_name ?? ""} size={32} />
+            <div className="min-w-0">
+              <div className="text-[13px] font-medium text-text-primary leading-tight truncate">
+                {item.employee_name ?? item.employee_id}
+              </div>
+              <div className="text-[11px] text-text-tertiary leading-tight truncate capitalize">
+                {item.reason} · {relTime(item.requested_at)}
+              </div>
             </div>
           </div>
+          <Pill tone="warning">Pending</Pill>
         </div>
-        <Pill tone="warning">Manual review</Pill>
-      </div>
 
-      {/* Amount block */}
-      <div className="px-[20px] py-[18px] border-b border-border-subtle">
-        <div className="flex items-center justify-between mb-[8px]">
-          <span className="label">Requested</span>
-          <span className="text-[11px] text-text-tertiary">{item.requestedAgo}</span>
+        <div className="px-[20px] py-[18px] border-b border-border-subtle">
+          <div className="label mb-[8px]">Requested</div>
+          <div
+            className="text-[24px] font-medium text-text-primary tabular leading-none"
+            style={{ letterSpacing: "-0.02em" }}
+          >
+            {fmtMoney(item.amount, item.currency)}
+          </div>
+          <div className="text-[12px] text-text-tertiary mt-[6px] tabular">
+            Fee {item.fee_percentage}% · {fmtMoney(item.fee_amount, item.currency)}
+          </div>
         </div>
-        <div
-          className="text-[24px] font-medium text-text-primary tabular leading-none"
-          style={{ letterSpacing: "-0.02em" }}
-        >
-          {fmtUsd(item.amountUsd)}
-        </div>
-        <div className="text-[12px] text-text-tertiary mt-[6px] tabular">
-          {fmtUsd(item.monthlyNetUsd)} · {item.pctOfNet}% of May net salary
-        </div>
-      </div>
 
-      {/* Risk signals */}
-      <div className="px-[20px] py-[14px] border-b border-border-subtle">
-        <div className="label mb-[10px]">Risk signals</div>
-        <div className="flex flex-col gap-[8px]">
-          {item.signals.map((s, i) => (
-            <div key={i} className="flex items-start gap-2">
-              <i
-                className={`ti ${
-                  s.kind === "positive" ? "ti-circle-check text-success" : "ti-alert-circle text-warning"
-                } text-[13px] mt-[2px]`}
-              />
-              <span className="text-[12px] text-text-primary leading-snug">
-                {s.text}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+        {item.description && (
+          <div className="px-[20px] py-[14px] border-b border-border-subtle">
+            <div className="label mb-[8px]">Reason</div>
+            <p className="text-[12px] text-text-secondary italic" style={{ lineHeight: 1.5 }}>
+              "{item.description}"
+            </p>
+          </div>
+        )}
 
-      {/* Actions */}
-      <div className="px-[20px] py-[14px] flex items-center gap-2">
-        <Button variant="secondary" className="flex-1 justify-center">
-          Decline
-        </Button>
-        <Button variant="primary" className="flex-1 justify-center">
-          Approve
-        </Button>
-      </div>
-    </Card>
+        <div className="px-[20px] py-[14px] text-[11.5px] text-text-tertiary text-right">
+          Review →
+        </div>
+      </Card>
+    </Link>
   );
 }
 
-function Chip({
-  children,
-  active = false,
-}: {
-  children: React.ReactNode;
-  active?: boolean;
-}) {
+function Chip({ children, active = false }: { children: React.ReactNode; active?: boolean }) {
   return (
     <button
       type="button"

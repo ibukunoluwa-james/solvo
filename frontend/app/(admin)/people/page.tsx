@@ -1,14 +1,28 @@
 import Link from "next/link";
 import Header from "../../_components/Header";
-import { Avatar, Button, Card, Pill } from "../../_components/ui";
-import { PEOPLE } from "../../_data/people";
+import { Avatar, Button, Card } from "../../_components/ui";
+import { api } from "../../_lib/api";
 
-const slug = (name: string) => name.toLowerCase().replace(/\s+/g, "-");
+const CC_TO_NAME: Record<string, string> = {
+  NG: "Nigeria",
+  KE: "Kenya",
+  ZA: "South Africa",
+  EG: "Egypt",
+  GH: "Ghana",
+  RW: "Rwanda",
+  UG: "Uganda",
+  TZ: "Tanzania",
+  US: "United States",
+};
 
-const formatUsd = (n: number) =>
-  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0 });
+const fmtSalary = (n: number, currency: string) =>
+  `${currency} ${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
-export default function PeoplePage() {
+export default async function PeoplePage() {
+  const { employees, total } = await api.employees.list({ limit: 50 });
+  const empCount = employees.filter((e) => e.employment_type === "full_time").length;
+  const ctrCount = employees.filter((e) => e.employment_type === "contractor").length;
+
   return (
     <>
       <Header
@@ -28,42 +42,35 @@ export default function PeoplePage() {
               <i className="ti ti-search absolute left-[10px] top-1/2 -translate-y-1/2 text-[13px] text-text-tertiary" />
               <input
                 type="text"
-                placeholder="Search by name or email"
+                placeholder="Search by name"
                 className="w-full bg-card border border-border rounded-[5px] pl-[30px] pr-3 py-[6px] text-[12px] text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-border-strong"
               />
             </div>
 
             <div className="flex items-center gap-1">
               <Chip active>
-                All <span className="tabular text-text-tertiary ml-[2px]">40</span>
+                All <span className="tabular text-text-tertiary ml-[2px]">{total}</span>
               </Chip>
               <Chip>
-                Employees{" "}
-                <span className="tabular text-text-tertiary/80 ml-[2px]">31</span>
+                Employees <span className="tabular text-text-tertiary/80 ml-[2px]">{empCount}</span>
               </Chip>
               <Chip>
-                Contractors{" "}
-                <span className="tabular text-text-tertiary/80 ml-[2px]">9</span>
+                Contractors <span className="tabular text-text-tertiary/80 ml-[2px]">{ctrCount}</span>
               </Chip>
             </div>
 
             <div className="flex-1" />
 
-            <Button variant="secondary" icon="ti-filter">
-              Country
-            </Button>
-            <Button variant="secondary" icon="ti-adjustments">
-              Filter
-            </Button>
+            <Button variant="secondary" icon="ti-filter">Country</Button>
+            <Button variant="secondary" icon="ti-adjustments">Filter</Button>
           </div>
 
-          {/* People table */}
+          {/* Table */}
           <Card className="overflow-hidden">
-            {/* Header row */}
             <div
               className="grid items-center bg-muted border-b border-border px-[22px] py-[11px] text-text-tertiary"
               style={{
-                gridTemplateColumns: "2fr 1fr 1.4fr 1.1fr 80px",
+                gridTemplateColumns: "2fr 1fr 1.2fr 1.2fr 110px",
                 columnGap: "16px",
                 fontSize: "10.5px",
                 fontWeight: 500,
@@ -73,53 +80,45 @@ export default function PeoplePage() {
             >
               <div>Name</div>
               <div>Country</div>
-              <div>Role</div>
-              <div className="text-right">Salary</div>
-              <div className="text-right">Status</div>
+              <div>Type</div>
+              <div className="text-right">Gross salary</div>
+              <div className="text-right">Bank</div>
             </div>
 
-            {/* Data rows */}
-            {PEOPLE.map((p, i) => (
+            {employees.map((p, i) => (
               <Link
-                key={p.email}
-                href={`/employees/${slug(p.name)}`}
+                key={p.id}
+                href={`/employees/${p.id}`}
                 className={`grid items-center px-[22px] py-[14px] hover:bg-canvas transition-colors ${
-                  i < PEOPLE.length - 1 ? "border-b border-border-subtle" : ""
+                  i < employees.length - 1 ? "border-b border-border-subtle" : ""
                 }`}
                 style={{
-                  gridTemplateColumns: "2fr 1fr 1.4fr 1.1fr 80px",
+                  gridTemplateColumns: "2fr 1fr 1.2fr 1.2fr 110px",
                   columnGap: "16px",
                 }}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <Avatar name={p.name} country={p.country} size={28} />
+                  <Avatar name={p.full_name} country={CC_TO_NAME[p.country] ?? p.country} size={28} />
                   <div className="min-w-0">
                     <div className="text-[12.5px] text-text-primary truncate leading-tight">
-                      {p.name}
+                      {p.full_name}
                     </div>
-                    <div className="text-[11px] text-text-quaternary truncate leading-tight">
-                      {p.email}
+                    <div className="text-[11px] text-text-quaternary truncate leading-tight tabular">
+                      {p.tax_id ? `Tax ID ${p.tax_id}` : "—"}
                     </div>
                   </div>
                 </div>
                 <div className="text-[12.5px] text-text-secondary">
-                  {p.country}
+                  {CC_TO_NAME[p.country] ?? p.country}
                 </div>
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-[12.5px] text-text-secondary truncate">
-                    {p.role}
-                  </span>
-                  {p.contractor && (
-                    <span className="text-[10.5px] font-medium text-text-secondary bg-subtle rounded-[3px] px-[6px] py-[1px] leading-none">
-                      Contractor
-                    </span>
-                  )}
+                <div className="text-[12.5px] text-text-secondary">
+                  {p.employment_type === "contractor" ? "Contractor" : "Employee"}
                 </div>
                 <div className="text-[12.5px] tabular text-text-primary text-right">
-                  {formatUsd(p.salaryUsd)}
+                  {fmtSalary(p.gross_salary, p.currency)}
                 </div>
-                <div className="flex justify-end">
-                  <Pill tone={p.status.tone}>{p.status.label}</Pill>
+                <div className="text-[11.5px] text-text-tertiary text-right tabular truncate">
+                  {p.bank_name ? `${p.bank_name} ····${(p.bank_account_number ?? "").slice(-4)}` : "—"}
                 </div>
               </Link>
             ))}
@@ -128,7 +127,7 @@ export default function PeoplePage() {
           {/* Pagination footer */}
           <div className="flex items-center justify-between mt-[14px]">
             <span className="text-[11.5px] text-text-tertiary tabular">
-              Showing 8 of 40
+              Showing {employees.length} of {total}
             </span>
             <div className="flex items-center gap-1">
               <button
@@ -148,13 +147,7 @@ export default function PeoplePage() {
   );
 }
 
-function Chip({
-  children,
-  active = false,
-}: {
-  children: React.ReactNode;
-  active?: boolean;
-}) {
+function Chip({ children, active = false }: { children: React.ReactNode; active?: boolean }) {
   return (
     <button
       type="button"

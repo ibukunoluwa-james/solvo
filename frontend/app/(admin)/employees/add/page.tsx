@@ -1,16 +1,59 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import Header from "../../../_components/Header";
 import { Button, Card } from "../../../_components/ui";
-
-const STEPS = [
-  { n: 1, label: "Identity", icon: "ti-circle-dot", state: "active" as const },
-  { n: 2, label: "Contract", icon: "ti-circle", state: "upcoming" as const },
-  { n: 3, label: "Compensation", icon: "ti-circle", state: "upcoming" as const },
-  { n: 4, label: "Tax & statutory", icon: "ti-circle", state: "upcoming" as const },
-  { n: 5, label: "Bank / wallet", icon: "ti-circle", state: "upcoming" as const },
-];
+import { api, ApiError } from "../../../_lib/api";
 
 export default function AddEmployeePage() {
+  const router = useRouter();
+  const [form, setForm] = useState({
+    full_name: "",
+    email: "",
+    password: "Temp0rary!",
+    country: "NG",
+    employment_type: "full_time" as "full_time" | "contractor",
+    gross_salary: "",
+    currency: "NGN",
+    bank_name: "",
+    bank_account_number: "",
+    bank_code: "",
+    tax_id: "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const set = (k: keyof typeof form) => (v: string) =>
+    setForm((f) => ({ ...f, [k]: v }));
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const created = await api.employees.create({
+        email: form.email,
+        password: form.password,
+        full_name: form.full_name,
+        country: form.country,
+        employment_type: form.employment_type,
+        gross_salary: Number(form.gross_salary),
+        currency: form.currency,
+        bank_name: form.bank_name || undefined,
+        bank_account_number: form.bank_account_number || undefined,
+        bank_code: form.bank_code || undefined,
+        tax_id: form.tax_id || undefined,
+      });
+      router.push(`/employees/${created.id}`);
+    } catch (err) {
+      setError(err instanceof ApiError && typeof err.detail === "string" ? err.detail : "Couldn't save");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <>
       <Header
@@ -20,102 +63,79 @@ export default function AddEmployeePage() {
               People
             </Link>
             <i className="ti ti-chevron-right text-[11px] text-text-quaternary" />
-            <span className="text-[13px] font-medium text-text-primary">
-              Add person
-            </span>
+            <span className="text-[13px] font-medium text-text-primary">Add person</span>
           </div>
         }
         right={
           <>
-            <Button variant="secondary" href="/people">
-              Cancel
-            </Button>
-            <Button variant="primary">Save &amp; invite</Button>
+            <Button variant="secondary" href="/people">Cancel</Button>
+            <button
+              type="submit"
+              form="add-employee-form"
+              disabled={submitting}
+              className="inline-flex items-center gap-[6px] rounded-[5px] text-[12px] font-medium leading-none px-[14px] py-[7px] bg-text-primary text-white hover:bg-text-primary/90 transition-colors disabled:opacity-60"
+            >
+              {submitting ? "Saving…" : "Save & invite"}
+            </button>
           </>
         }
       />
 
       <main className="flex-1 px-8 pt-7 pb-10 overflow-auto">
-        <div
-          className="grid max-w-[980px]"
-          style={{ gridTemplateColumns: "200px 1fr", gap: "32px" }}
-        >
-          {/* Step rail */}
-          <aside>
-            <div className="label mb-2">Steps</div>
-            <div className="flex flex-col">
-              {STEPS.map((s) => (
-                <div
-                  key={s.n}
-                  className={`flex items-center gap-2 px-[10px] py-[8px] rounded-[5px] ${
-                    s.state === "active"
-                      ? "bg-subtle text-text-primary font-medium"
-                      : "text-text-tertiary"
-                  }`}
-                >
-                  <i
-                    className={`ti ${s.icon} text-[14px] ${
-                      s.state === "active"
-                        ? "text-text-primary"
-                        : "text-text-quaternary"
-                    }`}
-                  />
-                  <span className="text-[12.5px]">{s.label}</span>
-                </div>
-              ))}
+        <form id="add-employee-form" onSubmit={onSubmit} className="max-w-[680px]">
+          {error && (
+            <div
+              className="text-[11.5px] font-medium mb-4 px-[12px] py-[8px] rounded-[5px]"
+              style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b" }}
+            >
+              {error}
             </div>
-          </aside>
+          )}
 
-          {/* Form card */}
           <Card className="px-[32px] py-[28px]">
-            <div>
-              <h2
-                className="text-[17px] font-medium text-text-primary"
-                style={{ letterSpacing: "-0.015em" }}
-              >
-                Identity
-              </h2>
-              <p className="text-[12.5px] text-text-tertiary mt-[6px]">
-                Basic information about the person you're adding
-              </p>
-            </div>
+            <h2 className="text-[17px] font-medium text-text-primary" style={{ letterSpacing: "-0.015em" }}>
+              Identity
+            </h2>
+            <p className="text-[12.5px] text-text-tertiary mt-[6px]">
+              Basic information about the person you're adding
+            </p>
 
             <div className="mt-[24px] flex flex-col gap-[16px]">
-              <div className="grid grid-cols-2 gap-[14px]">
-                <Field label="First name" />
-                <Field label="Last name" />
-              </div>
-
-              <Field
-                label="Personal email"
-                type="email"
-                helper="We'll send their invite here"
-              />
+              <Field label="Full name" value={form.full_name} onChange={set("full_name")} required />
+              <Field label="Personal email" type="email" value={form.email} onChange={set("email")} required />
 
               <div className="grid grid-cols-2 gap-[14px]">
-                <Field label="Country of residence" trailingIcon="ti-chevron-down" />
-                <Field label="Date of birth" trailingIcon="ti-calendar" />
+                <Field label="Country (ISO)" value={form.country} onChange={(v) => set("country")(v.toUpperCase().slice(0, 3))} required />
+                <div>
+                  <label className="label block mb-[7px]">Employment type</label>
+                  <select
+                    value={form.employment_type}
+                    onChange={(e) => set("employment_type")(e.target.value)}
+                    className="w-full bg-card border border-border rounded-[5px] px-[12px] py-[9px] text-[13px] text-text-primary focus:outline-none focus:border-text-secondary"
+                  >
+                    <option value="full_time">Full-time</option>
+                    <option value="contractor">Contractor</option>
+                  </select>
+                </div>
               </div>
 
-              <Field
-                label="National ID / Tax ID"
-                helper="Needed for tax filings — we'll verify with the local tax authority"
-                tabular
-              />
-            </div>
+              <div className="grid grid-cols-2 gap-[14px]">
+                <Field label="Gross salary" type="number" value={form.gross_salary} onChange={set("gross_salary")} required />
+                <Field label="Currency" value={form.currency} onChange={(v) => set("currency")(v.toUpperCase().slice(0, 3))} required />
+              </div>
 
-            {/* Step footer */}
-            <div className="mt-[26px] pt-[22px] border-t border-border flex items-center justify-between">
-              <span className="text-[11.5px] text-text-tertiary">Step 1 of 5</span>
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" disabled>
-                  Back
-                </Button>
-                <Button variant="primary">Continue</Button>
+              <Field label="National ID / Tax ID" value={form.tax_id} onChange={set("tax_id")} />
+
+              <hr className="border-border" />
+
+              <Field label="Bank name" value={form.bank_name} onChange={set("bank_name")} />
+              <div className="grid grid-cols-2 gap-[14px]">
+                <Field label="Bank code" value={form.bank_code} onChange={set("bank_code")} />
+                <Field label="Account number" value={form.bank_account_number} onChange={set("bank_account_number")} tabular />
               </div>
             </div>
           </Card>
-        </div>
+        </form>
       </main>
     </>
   );
@@ -123,32 +143,32 @@ export default function AddEmployeePage() {
 
 function Field({
   label,
+  value,
+  onChange,
   type = "text",
-  helper,
-  trailingIcon,
+  required = false,
   tabular = false,
 }: {
   label: string;
+  value: string;
+  onChange: (v: string) => void;
   type?: string;
-  helper?: string;
-  trailingIcon?: string;
+  required?: boolean;
   tabular?: boolean;
 }) {
   return (
     <div>
-      <label className="label block mb-[7px]">{label}</label>
-      <div className="relative">
-        <input
-          type={type}
-          className={`w-full bg-card border border-border rounded-[5px] px-[12px] py-[9px] text-[13px] text-text-primary placeholder:text-text-quaternary focus:outline-none focus:border-text-secondary ${tabular ? "tabular" : ""} ${trailingIcon ? "pr-[36px]" : ""}`}
-        />
-        {trailingIcon && (
-          <i className={`ti ${trailingIcon} absolute right-[12px] top-1/2 -translate-y-1/2 text-[14px] text-text-quaternary`} />
-        )}
-      </div>
-      {helper && (
-        <p className="text-[11.5px] text-text-tertiary mt-[6px]">{helper}</p>
-      )}
+      <label className="label block mb-[7px]">
+        {label}
+        {required && <span className="text-warning ml-1">*</span>}
+      </label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+        className={`w-full bg-card border border-border rounded-[5px] px-[12px] py-[9px] text-[13px] text-text-primary placeholder:text-text-quaternary focus:outline-none focus:border-text-secondary ${tabular ? "tabular" : ""}`}
+      />
     </div>
   );
 }

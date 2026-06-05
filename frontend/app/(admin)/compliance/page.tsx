@@ -1,105 +1,99 @@
+import Link from "next/link";
 import Header from "../../_components/Header";
-import { Button, Card, Pill } from "../../_components/ui";
+import { Button, Card } from "../../_components/ui";
+import { api } from "../../_lib/api";
 
-type Status = "up-to-date" | "due-soon" | "overdue";
-
-type Row = {
-  country: string;
-  flag: string;
-  filings: string;
-  lastFiled: string;
-  nextDue: string;
-  nextDueWarning?: boolean;
-  status: Status;
+const CC_TO_NAME: Record<string, string> = {
+  NG: "Nigeria", KE: "Kenya", ZA: "South Africa", EG: "Egypt", GH: "Ghana",
 };
 
-const ROWS: Row[] = [
-  {
-    country: "Nigeria",
-    flag: "🇳🇬",
-    filings: "PAYE · Pension · NHF · ITF",
-    lastFiled: "May 10 · ₦3.84M",
-    nextDue: "Jun 10",
-    status: "up-to-date",
-  },
-  {
-    country: "Kenya",
-    flag: "🇰🇪",
-    filings: "PAYE · NHIF · NSSF · Housing levy",
-    lastFiled: "Apr 9 · KSh 2.1M",
-    nextDue: "in 6 days",
-    nextDueWarning: true,
-    status: "due-soon",
-  },
-  {
-    country: "South Africa",
-    flag: "🇿🇦",
-    filings: "PAYE · UIF · SDL",
-    lastFiled: "May 7 · R 412K",
-    nextDue: "Jun 7",
-    status: "up-to-date",
-  },
-  {
-    country: "Egypt",
-    flag: "🇪🇬",
-    filings: "Income tax · Social insurance",
-    lastFiled: "May 5 · E£ 198K",
-    nextDue: "Jun 5",
-    status: "up-to-date",
-  },
-];
+const fmtMoney = (n: number, currency: string) =>
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n) + " " + currency;
 
-export default function CompliancePage() {
+const fmtUsd = (n: number) =>
+  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+export default async function CompliancePage() {
+  const audit = await api.compliance.auditTrail({ limit: 50 });
+
+  // Aggregate per country across all runs
+  type CountrySummary = {
+    country: string;
+    taxTypes: Set<string>;
+    totalRemitted: Record<string, number>; // by currency
+    filingCount: number;
+    latestPeriod: string | null;
+    latestRunStatus: string | null;
+  };
+
+  const byCountry = new Map<string, CountrySummary>();
+  for (const run of audit.audit_trail) {
+    for (const r of run.remittances) {
+      if (!byCountry.has(r.country)) {
+        byCountry.set(r.country, {
+          country: r.country,
+          taxTypes: new Set(),
+          totalRemitted: {},
+          filingCount: 0,
+          latestPeriod: null,
+          latestRunStatus: null,
+        });
+      }
+      const c = byCountry.get(r.country)!;
+      c.taxTypes.add(r.tax_type);
+      c.totalRemitted[r.currency] = (c.totalRemitted[r.currency] ?? 0) + r.amount;
+      c.filingCount += 1;
+      if (!c.latestPeriod || run.period > c.latestPeriod) {
+        c.latestPeriod = run.period;
+        c.latestRunStatus = run.status;
+      }
+    }
+  }
+  const countries = Array.from(byCountry.values());
+
+  const totalRunsFiled = audit.audit_trail.length;
+  const totalRemittances = audit.audit_trail.reduce((s, r) => s + r.remittances.length, 0);
+
   return (
     <>
       <Header
         title="Compliance"
         right={
           <>
-            <Button variant="secondary" href="/compliance/audit">
-              Audit trail
-            </Button>
-            <Button variant="primary" icon="ti-download">
-              Export filings
-            </Button>
+            <Button variant="secondary" href="/compliance/audit">Audit trail</Button>
+            <Button variant="primary" icon="ti-download">Export filings</Button>
           </>
         }
       />
 
       <main className="flex-1 px-8 pt-7 pb-10 overflow-auto">
         <div className="flex flex-col gap-[16px] max-w-[1280px]">
-          {/* Overall status */}
           <Card
             className="px-[26px] py-[22px] grid items-center"
-            style={{
-              gridTemplateColumns: "1.4fr 1px 1fr 1px 1fr 1px 1fr",
-              columnGap: "20px",
-            }}
+            style={{ gridTemplateColumns: "1.4fr 1px 1fr 1px 1fr", columnGap: "20px" }}
           >
             <div>
               <div className="flex items-center gap-2">
                 <i className="ti ti-shield-check text-[18px] text-success" />
-                <span className="label">Overall status</span>
+                <span className="label">Active jurisdictions</span>
               </div>
               <div
                 className="text-[22px] font-medium text-text-primary tabular mt-[8px] leading-none"
                 style={{ letterSpacing: "-0.02em" }}
               >
-                3 of 4 up to date
+                {countries.length}
               </div>
               <div className="text-[12px] text-text-tertiary mt-[4px] tabular">
-                1 filing due in 6 days
+                {countries.map((c) => CC_TO_NAME[c.country] ?? c.country).join(" · ")}
               </div>
             </div>
             <Divider />
-            <SmallStat label="Taxes YTD" value="$42,180" />
+            <SmallStat label="Runs with filings" value={String(totalRunsFiled)} />
             <Divider />
-            <SmallStat label="Filings YTD" value="24" />
-            <Divider />
-            <SmallStat label="Auto-filed" value="100%" />
+            <SmallStat label="Remittances filed" value={String(totalRemittances)} />
           </Card>
 
-          {/* By-country table */}
+          {/* By-country */}
           <Card className="overflow-hidden">
             <div className="px-[22px] py-[14px] border-b border-border">
               <h3 className="text-[12.5px] font-medium text-text-primary leading-none">
@@ -107,84 +101,46 @@ export default function CompliancePage() {
               </h3>
             </div>
 
-            {ROWS.map((r, i) => {
-              const tint =
-                r.status === "due-soon"
-                  ? "bg-warning-bg-soft"
-                  : r.status === "overdue"
-                    ? ""
-                    : "";
+            {countries.map((c, i) => {
+              const sumStrings = Object.entries(c.totalRemitted).map(([cur, amt]) =>
+                fmtMoney(amt, cur)
+              );
               return (
                 <div
-                  key={r.country}
-                  className={`grid items-center px-[22px] py-[18px] ${tint} ${
-                    i < ROWS.length - 1 ? "border-b border-border-subtle" : ""
-                  }`}
+                  key={c.country}
+                  className={`grid items-center px-[22px] py-[18px] ${i < countries.length - 1 ? "border-b border-border-subtle" : ""}`}
                   style={{
-                    gridTemplateColumns: "32px 2fr 1.4fr 1.2fr 1fr 90px",
+                    gridTemplateColumns: "32px 2fr 1.4fr 1.4fr 90px",
                     columnGap: "16px",
                   }}
                 >
                   <div className="flex justify-center">
-                    <span
-                      className="w-[8px] h-[8px] rounded-full"
-                      style={{
-                        background:
-                          r.status === "up-to-date"
-                            ? "#15803d"
-                            : r.status === "due-soon"
-                              ? "#b45309"
-                              : "#dc2626",
-                      }}
-                    />
+                    <span className="w-[8px] h-[8px] rounded-full bg-success" />
                   </div>
                   <div className="min-w-0">
                     <div className="text-[13px] font-medium text-text-primary leading-tight">
-                      {r.flag} {r.country}
+                      {CC_TO_NAME[c.country] ?? c.country}
                     </div>
                     <div className="text-[11px] text-text-tertiary leading-tight mt-[2px] truncate">
-                      {r.filings}
+                      {Array.from(c.taxTypes).join(" · ")}
                     </div>
                   </div>
                   <div>
-                    <div className="label">Last filed</div>
+                    <div className="label">Latest period</div>
                     <div className="text-[12.5px] text-text-primary tabular mt-[2px]">
-                      {r.lastFiled}
+                      {c.latestPeriod ?? "—"}
                     </div>
                   </div>
                   <div>
-                    <div className="label">Next due</div>
-                    <div
-                      className={`text-[12.5px] tabular mt-[2px] ${
-                        r.nextDueWarning
-                          ? "text-warning font-medium"
-                          : "text-text-primary"
-                      }`}
-                    >
-                      {r.nextDue}
+                    <div className="label">Remitted</div>
+                    <div className="text-[12.5px] text-text-primary tabular mt-[2px]">
+                      {sumStrings.join(" · ")}
                     </div>
-                  </div>
-                  <div>
-                    <Pill
-                      tone={
-                        r.status === "up-to-date"
-                          ? "success"
-                          : r.status === "due-soon"
-                            ? "warning"
-                            : "warning"
-                      }
-                    >
-                      {r.status === "up-to-date"
-                        ? "Up to date"
-                        : r.status === "due-soon"
-                          ? "Due soon"
-                          : "Overdue"}
-                    </Pill>
                   </div>
                   <div className="text-right">
-                    <span className="text-[11.5px] text-text-secondary cursor-pointer">
+                    <Link href="/compliance/audit" className="text-[11.5px] text-text-secondary cursor-pointer">
                       View →
-                    </span>
+                    </Link>
                   </div>
                 </div>
               );
@@ -198,10 +154,7 @@ export default function CompliancePage() {
 
 function Divider() {
   return (
-    <div
-      className="bg-border"
-      style={{ width: "1px", height: "50px", justifySelf: "center" }}
-    />
+    <div className="bg-border" style={{ width: "1px", height: "50px", justifySelf: "center" }} />
   );
 }
 
