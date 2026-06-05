@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # once migrations own the schema.
     auto_create_tables: bool = True
 
+    # When True, populate the database with demo data on startup IF it is empty.
+    # Idempotent (skips if any users already exist), so it is safe to leave on.
+    # Intended for demos only — do not enable on a real production database.
+    seed_demo_data: bool = False
+
     @field_validator("database_url")
     @classmethod
     def _force_async_driver(cls, v: str) -> str:

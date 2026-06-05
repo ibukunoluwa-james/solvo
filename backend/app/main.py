@@ -52,6 +52,10 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables ensured (auto_create_tables=on)")
 
+    if settings.seed_demo_data:
+        from app.seed import seed
+        await seed()
+
     yield
 
     await engine.dispose()
