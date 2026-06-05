@@ -1,0 +1,43 @@
+# Render Blueprint — provisions the Solvo API + its PostgreSQL database.
+# Deploy via Render dashboard → "New +" → "Blueprint" → pick this repo.
+# Docs: https://render.com/docs/blueprint-spec
+
+databases:
+  - name: solvo-db
+    databaseName: solvo
+    user: solvo
+    plan: free            # NOTE: free Postgres is deleted after 30 days. Use "starter" ($7/mo) to keep it.
+
+services:
+  - type: web
+    name: solvo-api
+    runtime: python
+    plan: free             # free web service sleeps after 15 min idle (~50s cold start)
+    rootDir: backend       # repo root holds backend/ and frontend/; build + run happen here
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # Internal connection string from the database above — auto-injected, no copy/paste.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: solvo-db
+          property: connectionString
+      # Strong JWT signing key, generated once by Render and kept secret.
+      - key: SECRET_KEY
+        generateValue: true
+      - key: APP_ENV
+        value: production
+      # Pin Python — newer minors sometimes lack wheels for pinned deps.
+      - key: PYTHON_VERSION
+        value: "3.12.4"
+      # Set this to your deployed frontend origin (comma-separated for multiple).
+      - key: CORS_ORIGINS
+        value: "http://localhost:3000"
+      # Kora: keep mock mode on until you add real keys in the dashboard.
+      - key: KORA_MOCK_MODE
+        value: "true"
+      - key: KORA_API_KEY
+        sync: false          # set manually in dashboard (secret)
+      - key: KORA_ENCRYPTION_KEY
+        sync: false          # set manually in dashboard (secret)
