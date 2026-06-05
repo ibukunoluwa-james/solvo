@@ -1,7 +1,7 @@
-import Header from "../_components/Header";
-import { Button, Card, StatStrip } from "../_components/ui";
-import { api } from "../_lib/api";
-import type { PayrollRun } from "../_lib/types";
+import Header from "../../_components/Header";
+import { Button, Card, StatStrip } from "../../_components/ui";
+import { api } from "../../_lib/api";
+import type { PayrollRun } from "../../_lib/types";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",

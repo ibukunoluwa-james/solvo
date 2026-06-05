@@ -11,7 +11,7 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Overview", icon: "ti-layout-grid" },
+  { href: "/overview", label: "Overview", icon: "ti-layout-grid" },
   { href: "/people", label: "People", icon: "ti-users", badge: "40" },
   { href: "/payroll", label: "Pay runs", icon: "ti-cash" },
   {
@@ -35,7 +35,6 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   const isActive = (href: string) => {
-    if (href === "/") return pathname === "/";
     // Treat /pay-runs/* as active for Pay runs
     return pathname === href || pathname.startsWith(href + "/");
   };

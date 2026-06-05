@@ -19,7 +19,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const t = await api.auth.login({ email, password });
-      router.push(t.role === "employee" ? "/me" : "/");
+      router.push(t.role === "employee" ? "/me" : "/overview");
     } catch (err) {
       const msg =
         err instanceof ApiError

@@ -22,10 +22,10 @@ const formatSalary = (n: number, currency: string) =>
 
 const TABS = [
   { key: "profile", label: "Profile", active: true },
-  { key: "contract", label: "Contract" },
-  { key: "compensation", label: "Compensation" },
-  { key: "payslips", label: "Payslips" },
-  { key: "advances", label: "Advances" },
+  { key: "contract", label: "Contract", active: false },
+  { key: "compensation", label: "Compensation", active: false },
+  { key: "payslips", label: "Payslips", active: false },
+  { key: "advances", label: "Advances", active: false },
 ] as const;
 
 type PageProps = { params: Promise<{ id: string }> };

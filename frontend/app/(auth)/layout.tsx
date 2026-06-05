@@ -9,7 +9,7 @@ export default function AuthLayout({
     <div className="min-h-screen flex flex-col items-center justify-center bg-canvas px-4 py-10">
       {/* Brand block */}
       <Link
-        href="/login"
+        href="/"
         className="flex items-center gap-[10px] mb-[40px] mt-[20px]"
       >
         <svg
