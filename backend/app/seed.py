@@ -19,7 +19,7 @@ import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.database import async_session_factory
 from app.dependencies import hash_password
@@ -111,9 +111,13 @@ REMITTANCE_LABELS = {
 async def seed() -> bool:
     """Seed demo data if the database is empty. Returns True if it seeded."""
     async with async_session_factory() as session:
-        existing = await session.scalar(select(func.count()).select_from(User))
-        if existing:
-            logger.info("Seed skipped — database already has %s user(s).", existing)
+        # Idempotency keys on the demo admin specifically (not "any user"), so the
+        # demo set is created even on a database that already holds other data.
+        existing_admin = await session.scalar(
+            select(User).where(User.email == ADMIN["email"])
+        )
+        if existing_admin:
+            logger.info("Seed skipped — demo admin %s already exists.", ADMIN["email"])
             return False
 
         # ── Admin + company ──
