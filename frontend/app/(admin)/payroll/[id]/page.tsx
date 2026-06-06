@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 import Header from "../../../_components/Header";
 import { Avatar, Button, Card, Pill } from "../../../_components/ui";
-import { api } from "../../../_lib/api";
+import { api, ApiError } from "../../../_lib/api";
 import { useApi, PageStatus } from "../../../_lib/useApi";
-import type { PayrollEntry } from "../../../_lib/types";
+import type { PayrollEntry, TaxSummaryItem } from "../../../_lib/types";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -26,17 +27,51 @@ const COUNTRY_COLOR: Record<string, string> = {
 
 export default function PayRunReviewPage() {
   const { id } = useParams<{ id: string }>();
-  const { data, loading, error, reload } = useApi(
-    () => Promise.all([api.payroll.getRun(id), api.payroll.previewRun(id)]),
-    [id],
-  );
+  const { data, loading, error, reload } = useApi(async () => {
+    // Get the run first; only call /preview if the run is still a draft.
+    // /preview is a mutation (draft → previewed) and 400s on completed /
+    // processing / failed runs, so blindly calling it on every load breaks
+    // the post-execute reload. Once a run has been previewed at least once,
+    // entries + tax-summary are stable read endpoints that work in any state.
+    let run = await api.payroll.getRun(id);
+    if (run.status === "draft") {
+      await api.payroll.previewRun(id);
+      run = await api.payroll.getRun(id);
+    }
+    const [entries, taxSummary] = await Promise.all([
+      api.payroll.getEntries(id),
+      api.payroll.getTaxSummary(id),
+    ]);
+    return { run, entries, taxSummary };
+  }, [id]);
+  const [funding, setFunding] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   if (!data) return <PageStatus loading={loading} error={error} onRetry={reload} />;
 
-  const [run, preview] = data;
+  const { run, entries, taxSummary } = data;
+  const canFund = run.status === "draft" || run.status === "previewed";
+
+  async function approveAndFund() {
+    setActionError(null);
+    setFunding(true);
+    try {
+      await api.payroll.executeRun(id);
+      reload();
+    } catch (err) {
+      setActionError(
+        err instanceof ApiError && typeof err.detail === "string"
+          ? err.detail
+          : "Couldn’t fund this run. Please try again.",
+      );
+    } finally {
+      setFunding(false);
+    }
+  }
 
   // Group entries by country
   const groups = new Map<string, PayrollEntry[]>();
-  for (const e of preview.entries) {
+  for (const e of entries) {
     const cc = e.employee_country ?? "??";
     if (!groups.has(cc)) groups.set(cc, []);
     groups.get(cc)!.push(e);
@@ -61,14 +96,46 @@ export default function PayRunReviewPage() {
         }
         right={
           <>
-            <Button variant="secondary">Save draft</Button>
-            <Button variant="primary">Approve &amp; fund</Button>
+            <Button variant="secondary" href="/payroll">
+              Back to runs
+            </Button>
+            {run.status === "completed" ? (
+              <Button variant="secondary" icon="ti-check" disabled className="opacity-70">
+                Funded
+              </Button>
+            ) : run.status === "processing" ? (
+              <Button variant="secondary" disabled className="opacity-70">
+                Processing…
+              </Button>
+            ) : run.status === "failed" ? (
+              <Button variant="secondary" icon="ti-alert-triangle" disabled className="opacity-70">
+                Funding failed
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={approveAndFund}
+                disabled={funding || !canFund}
+                className="disabled:opacity-60"
+              >
+                {funding ? "Funding…" : "Approve & fund"}
+              </Button>
+            )}
           </>
         }
       />
 
       <main className="flex-1 px-8 pt-7 pb-10 overflow-auto">
         <div className="flex flex-col gap-[20px] max-w-[1280px]">
+          {actionError && (
+            <div
+              className="text-[11.5px] font-medium px-[12px] py-[8px] rounded-[5px]"
+              style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b" }}
+            >
+              {actionError}
+            </div>
+          )}
+
           {/* Summary card */}
           <Card className="px-[26px] py-[22px]">
             <div
@@ -78,13 +145,13 @@ export default function PayRunReviewPage() {
                 columnGap: "20px",
               }}
             >
-              <SummaryCell label="Total net" value={fmtUsd(preview.total_net)} big />
+              <SummaryCell label="Total net" value={fmtUsd(run.total_net)} big />
               <Divider />
-              <SummaryCell label="Taxes withheld" value={fmtUsd(preview.total_tax)} />
+              <SummaryCell label="Taxes withheld" value={fmtUsd(run.total_tax)} />
               <Divider />
-              <SummaryCell label="Pension" value={fmtUsd(preview.total_pension)} />
+              <SummaryCell label="Pension" value={fmtUsd(run.total_pension)} />
               <Divider />
-              <SummaryCell label="Total gross" value={fmtUsd(preview.total_gross)} />
+              <SummaryCell label="Total gross" value={fmtUsd(run.total_gross)} />
             </div>
           </Card>
 
@@ -96,7 +163,7 @@ export default function PayRunReviewPage() {
               </h3>
             </div>
             <div className="px-[22px] py-[14px] flex flex-wrap gap-x-6 gap-y-3">
-              {preview.tax_summary.map((t, i) => (
+              {taxSummary.map((t: TaxSummaryItem, i: number) => (
                 <div key={i} className="flex items-center gap-2">
                   <i className="ti ti-circle-check text-[14px] text-success" />
                   <span className="text-[12px] text-text-secondary">
@@ -117,7 +184,7 @@ export default function PayRunReviewPage() {
                 Payroll lines
               </h3>
               <span className="text-[11.5px] text-text-tertiary leading-none">
-                {preview.entries.length} of {preview.employee_count} loaded · grouped by country
+                {entries.length} of {run.employee_count} loaded · grouped by country
               </span>
             </div>
 
