@@ -6,8 +6,13 @@ Populates the database with a self-contained demo: one company, an admin
 payroll run with real tax-engine numbers and statutory remittances, an
 upcoming draft run, and three advances in different states.
 
-Idempotent: if any user already exists, seeding is skipped. Controlled by
-settings.seed_demo_data — intended for demos only, never a real production DB.
+Idempotent and self-healing: keyed on the demo company. If it does not exist,
+everything is created; if it does, the demo accounts' emails and payout details
+are updated in place to the canonical values below (so existing databases are
+fixed without a wipe). Controlled by settings.seed_demo_data — demos only.
+
+Payout details use Kora's SANDBOX TEST ACCOUNTS so real (test-mode) payouts
+succeed. Emails use a Kora-valid domain — Kora rejects the `.demo` TLD.
 
 Run automatically from the app lifespan (see app.main), or standalone:
 
@@ -20,6 +25,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.database import async_session_factory
 from app.dependencies import hash_password
@@ -41,8 +47,11 @@ logger = logging.getLogger(__name__)
 # ── Shared demo password (all logins) ──
 DEMO_PASSWORD = "Solvo!Demo123"
 
+# Domain must be one Kora accepts (it rejects `.demo`); verified valid.
+DEMO_DOMAIN = "solvopay.africa"
+
 ADMIN = {
-    "email": "admin@solvo.demo",
+    "email": f"admin@{DEMO_DOMAIN}",
     "full_name": "Ada Okafor",
 }
 
@@ -54,51 +63,64 @@ COMPANY = {
     "kora_wallet_id": "wlt_demo_0001",
 }
 
-# email local-part is firstname; the first one is the canonical employee login.
+# Payout details are Kora SANDBOX TEST ACCOUNTS that resolve to "success":
+#   NGN bank   033 / 0000000000
+#   KES mobile 254711111111 (Safaricom)
+#   GHS mobile 233242426222 (operator mtn-gh accepted; success keyed on number)
 EMPLOYEES = [
     {
-        "full_name": "Tunde Bello", "email": "employee@solvo.demo",
+        "full_name": "Tunde Bello", "email": f"employee@{DEMO_DOMAIN}",
         "country": "NG", "currency": "NGN", "employment_type": EmploymentType.full_time,
         "gross_salary": Decimal("850000.00"),
-        "bank_account_number": "0123456789", "bank_code": "058", "bank_name": "GTBank",
+        "bank_account_number": "0000000000", "bank_code": "033", "bank_name": "Kora Sandbox Bank",
+        "mobile_wallet": None,
         "tax_id": "NG-NIN-22118", "pension_id": "PEN1009881",
     },
     {
-        "full_name": "Chioma Eze", "email": "chioma@solvo.demo",
+        "full_name": "Chioma Eze", "email": f"chioma@{DEMO_DOMAIN}",
         "country": "NG", "currency": "NGN", "employment_type": EmploymentType.full_time,
         "gross_salary": Decimal("1200000.00"),
-        "bank_account_number": "2233445566", "bank_code": "044", "bank_name": "Access Bank",
+        "bank_account_number": "0000000000", "bank_code": "033", "bank_name": "Kora Sandbox Bank",
+        "mobile_wallet": None,
         "tax_id": "NG-NIN-77342", "pension_id": "PEN2204517",
     },
     {
-        "full_name": "Ifeanyi Okonkwo", "email": "ifeanyi@solvo.demo",
+        "full_name": "Ifeanyi Okonkwo", "email": f"ifeanyi@{DEMO_DOMAIN}",
         "country": "NG", "currency": "NGN", "employment_type": EmploymentType.contractor,
         "gross_salary": Decimal("600000.00"),
-        "bank_account_number": "9988776655", "bank_code": "057", "bank_name": "Zenith Bank",
+        "bank_account_number": "0000000000", "bank_code": "033", "bank_name": "Kora Sandbox Bank",
+        "mobile_wallet": None,
         "tax_id": "NG-NIN-51200", "pension_id": None,
     },
     {
-        "full_name": "Wanjiru Kamau", "email": "wanjiru@solvo.demo",
+        # KES via bank — mobile money caps at 70,000/txn; salaries exceed that.
+        "full_name": "Wanjiru Kamau", "email": f"wanjiru@{DEMO_DOMAIN}",
         "country": "KE", "currency": "KES", "employment_type": EmploymentType.full_time,
         "gross_salary": Decimal("320000.00"),
-        "mobile_wallet": "+254712345678",
+        "bank_account_number": "000000000000", "bank_code": "0068", "bank_name": "Kora Sandbox Bank",
+        "mobile_wallet": None,
         "tax_id": "KE-KRA-A0098", "pension_id": "NSSF-441922",
     },
     {
-        "full_name": "Otieno Odhiambo", "email": "otieno@solvo.demo",
+        "full_name": "Otieno Odhiambo", "email": f"otieno@{DEMO_DOMAIN}",
         "country": "KE", "currency": "KES", "employment_type": EmploymentType.full_time,
         "gross_salary": Decimal("180000.00"),
-        "mobile_wallet": "+254798765432",
+        "bank_account_number": "000000000000", "bank_code": "0068", "bank_name": "Kora Sandbox Bank",
+        "mobile_wallet": None,
         "tax_id": "KE-KRA-B7741", "pension_id": "NSSF-552033",
     },
     {
-        "full_name": "Kwame Mensah", "email": "kwame@solvo.demo",
+        "full_name": "Kwame Mensah", "email": f"kwame@{DEMO_DOMAIN}",
         "country": "GH", "currency": "GHS", "employment_type": EmploymentType.full_time,
         "gross_salary": Decimal("12000.00"),
-        "mobile_wallet": "+233241112222",
+        "bank_account_number": None, "bank_code": None, "bank_name": None,
+        "mobile_wallet": "233242426222",
         "tax_id": "GH-TIN-P0042", "pension_id": "SSNIT-118273",
     },
 ]
+
+# Fields synced onto existing employee rows when healing an already-seeded DB.
+_PAYOUT_FIELDS = ("bank_account_number", "bank_code", "bank_name", "mobile_wallet")
 
 # Statutory account labels per country (paye / pension / housing-or-health).
 REMITTANCE_LABELS = {
@@ -109,17 +131,74 @@ REMITTANCE_LABELS = {
 
 
 async def seed() -> bool:
-    """Seed demo data if the database is empty. Returns True if it seeded."""
-    async with async_session_factory() as session:
-        # Idempotency keys on the demo admin specifically (not "any user"), so the
-        # demo set is created even on a database that already holds other data.
-        existing_admin = await session.scalar(
-            select(User).where(User.email == ADMIN["email"])
-        )
-        if existing_admin:
-            logger.info("Seed skipped — demo admin %s already exists.", ADMIN["email"])
-            return False
+    """
+    Create the demo dataset, or heal it if it already exists.
 
+    Returns True if anything was written (created or updated). Keyed on the demo
+    company so it works whether the DB is empty or already holds demo/other data.
+    """
+    async with async_session_factory() as session:
+        company = await session.scalar(
+            select(Company).where(Company.name == COMPANY["name"])
+        )
+        if company is None:
+            await _create_fresh(session)
+            await session.commit()
+            logger.info(
+                "Seeded demo data: company '%s', admin %s, %d employees, "
+                "2 payroll runs, 3 advances.",
+                COMPANY["name"], ADMIN["email"], len(EMPLOYEES),
+            )
+            return True
+
+        changed = await _upgrade_existing(session, company)
+        if changed:
+            await session.commit()
+            logger.info("Healed existing demo data (emails + Kora sandbox payout details).")
+        else:
+            logger.info("Demo data already up to date — nothing to change.")
+        return changed
+
+
+async def _upgrade_existing(session, company: Company) -> bool:
+    """
+    Update an already-seeded demo company in place: refresh the admin email and
+    each employee's login email + payout details to the canonical values.
+    Matches employees by full_name. Leaves payroll/advances untouched.
+    """
+    changed = False
+
+    admin = await session.get(User, company.user_id)
+    if admin and admin.email != ADMIN["email"]:
+        admin.email = ADMIN["email"]
+        admin.full_name = ADMIN["full_name"]
+        changed = True
+
+    result = await session.execute(
+        select(Employee)
+        .options(selectinload(Employee.user))
+        .where(Employee.company_id == company.id)
+    )
+    by_name = {e.full_name: e for e in result.scalars()}
+
+    for spec in EMPLOYEES:
+        emp = by_name.get(spec["full_name"])
+        if not emp:
+            continue
+        for field in _PAYOUT_FIELDS:
+            if getattr(emp, field) != spec.get(field):
+                setattr(emp, field, spec.get(field))
+                changed = True
+        if emp.user and emp.user.email != spec["email"]:
+            emp.user.email = spec["email"]
+            changed = True
+
+    return changed
+
+
+async def _create_fresh(session) -> None:
+    """Create the full demo dataset from scratch."""
+    if True:
         # ── Admin + company ──
         admin = User(
             email=ADMIN["email"],
@@ -303,13 +382,7 @@ async def seed() -> bool:
             disbursed_at=datetime(2026, 5, 20, 12, 5, tzinfo=timezone.utc),
         ))
 
-        await session.commit()
-
-    logger.info(
-        "Seeded demo data: company '%s', admin %s, %d employees, 2 payroll runs, 3 advances.",
-        COMPANY["name"], ADMIN["email"], len(EMPLOYEES),
-    )
-    return True
+        await session.flush()
 
 
 if __name__ == "__main__":

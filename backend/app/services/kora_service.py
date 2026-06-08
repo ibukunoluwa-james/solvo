@@ -31,7 +31,6 @@ import hmac
 import json
 import logging
 import uuid
-from collections import defaultdict
 from dataclasses import dataclass
 
 import httpx
@@ -154,6 +153,25 @@ class KoraService:
             "customer": customer,
         }
 
+    @staticmethod
+    def _error_message(body: dict, status_code: int) -> str:
+        """
+        Build a human-readable error from a Kora failure body, including
+        field-level validation messages (e.g. 422 validation_error returns
+        data = {"destination.customer.email": {"message": "..."}}).
+        """
+        msg = body.get("message") or f"HTTP {status_code}"
+        data = body.get("data")
+        if isinstance(data, dict):
+            details = [
+                f"{field}: {info['message']}"
+                for field, info in data.items()
+                if isinstance(info, dict) and "message" in info
+            ]
+            if details:
+                msg = f"{msg} — {'; '.join(details)}"
+        return msg
+
     def _parse_single(self, resp: httpx.Response, reference: str) -> KoraTransferResponse:
         """Map a single-payout / verify HTTP response to KoraTransferResponse."""
         try:
@@ -162,8 +180,8 @@ class KoraService:
             body = {}
 
         if resp.status_code >= 400 or not body.get("status", False):
-            message = body.get("message") or f"HTTP {resp.status_code}"
-            logger.error("Kora payout %s rejected: %s", reference, message)
+            message = self._error_message(body, resp.status_code)
+            logger.error("Kora payout %s rejected (HTTP %s): %s", reference, resp.status_code, message)
             return KoraTransferResponse(reference, "", "failed", message)
 
         data = body.get("data", {})
@@ -205,103 +223,35 @@ class KoraService:
         self, transfers: list[KoraTransfer]
     ) -> KoraBatchResponse:
         """
-        Process multiple transfers. Kora's bulk endpoint requires a single
-        currency per batch and 2-50 payouts, so we group by currency and use
-        the bulk endpoint per group (falling back to a single payout when a
-        currency group has only one transfer).
+        Disburse multiple payouts by fanning out concurrent single-payout calls.
+
+        We deliberately do NOT use Kora's /disburse/bulk endpoint: it requires
+        per-account activation and otherwise rejects every request with a
+        misleading "unsafe characters" validation error. Single payouts work for
+        all rails/currencies and Kora processes them in parallel on their side.
         """
         if self.mock_mode:
             return self._mock_bulk(transfers)
 
-        results: list[KoraTransferResponse] = []
-        batch_ids: list[str] = []
-
-        # Mobile-money payouts go one-by-one (Kora's bulk endpoint is bank-only).
-        bank_transfers = [t for t in transfers if not t.is_mobile_money]
-        for t in transfers:
-            if t.is_mobile_money:
-                results.append(await self.initiate_transfer(t))
-
-        groups: dict[str, list[KoraTransfer]] = defaultdict(list)
-        for t in bank_transfers:
-            groups[t.currency].append(t)
-
-        for currency, group in groups.items():
-            if len(group) == 1:
-                results.append(await self.initiate_transfer(group[0]))
-                continue
-
-            batch_ref = f"solvo_batch_{uuid.uuid4().hex[:12]}"
-            payload = {
-                "batch_reference": batch_ref,
-                "currency": currency,
-                "description": "Solvo payroll disbursement",
-                "merchant_bears_cost": False,
-                "payouts": [
-                    {
-                        "reference": t.reference,
-                        "amount": round(t.amount, 2),
-                        "type": "bank_account",
-                        "narration": t.narration,
-                        "bank_account": {
-                            "bank_code": t.bank_code,
-                            "account_number": t.bank_account,
-                        },
-                        "customer": {
-                            "name": t.account_name,
-                            "email": self._email_for(t),
-                        },
-                    }
-                    for t in group
-                ],
-            }
-
-            try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    resp = await client.post(
-                        f"{self.base_url}/transactions/disburse/bulk",
-                        json=payload,
-                        headers=self._headers(),
-                    )
-                results.extend(self._parse_bulk_group(resp, group))
-                batch_ids.append(batch_ref)
-            except httpx.HTTPError as exc:
-                logger.error("Kora bulk transport error (%s): %s", currency, exc)
-                results.extend(
-                    KoraTransferResponse(t.reference, "", "failed", str(exc))
-                    for t in group
-                )
-
-        return KoraBatchResponse(
-            batch_id=";".join(batch_ids) or f"batch_{uuid.uuid4().hex[:8]}",
-            total_transfers=len(transfers),
-            status="processing",
-            transfers=results,
+        import asyncio
+        results = list(
+            await asyncio.gather(*(self.initiate_transfer(t) for t in transfers))
         )
 
-    def _parse_bulk_group(
-        self, resp: httpx.Response, group: list[KoraTransfer]
-    ) -> list[KoraTransferResponse]:
-        """
-        The bulk endpoint returns a batch-level result, not per-payout statuses.
-        On acceptance, each payout is queued ("processing") and its final state
-        arrives via webhook (keyed on the payout reference). On rejection, the
-        whole group fails.
-        """
-        try:
-            body = resp.json()
-        except ValueError:
-            body = {}
+        statuses = {r.status for r in results}
+        if statuses <= {"success", "completed"}:
+            batch_status = "completed"
+        elif statuses == {"failed"}:
+            batch_status = "failed"
+        else:
+            batch_status = "processing"
 
-        if resp.status_code >= 400 or not body.get("status", False):
-            message = body.get("message") or f"HTTP {resp.status_code}"
-            logger.error("Kora bulk batch rejected: %s", message)
-            return [KoraTransferResponse(t.reference, "", "failed", message) for t in group]
-
-        return [
-            KoraTransferResponse(t.reference, t.reference, "processing", "Queued in batch")
-            for t in group
-        ]
+        return KoraBatchResponse(
+            batch_id=f"solvobatch{uuid.uuid4().hex[:12]}",
+            total_transfers=len(transfers),
+            status=batch_status,
+            transfers=results,
+        )
 
     # ── Status Check ──
 

@@ -207,12 +207,15 @@ class AdvanceService:
 
         result = await self.kora.initiate_transfer(transfer)
 
-        # Store the reference we sent so the webhook can match and settle it.
+        if result.status == "failed":
+            # Surface Kora's real reason (e.g. invalid account, amount cap).
+            raise ValueError(f"Disbursement failed: {result.message}")
+
+        # Accepted (success/processing). Store the reference we sent so the
+        # webhook can match it; mark disbursed now. If the async payout later
+        # fails, the webhook reverts it to approved.
         advance.kora_transfer_id = result.kora_reference or ref
-        if result.status in ("success", "completed"):
-            advance.status = AdvanceStatus.disbursed
-        # If "processing" (real async payout), it stays approved until the
-        # webhook flips it to disbursed.
+        advance.status = AdvanceStatus.disbursed
         advance.disbursed_at = datetime.now(timezone.utc)
 
         await db.flush()
