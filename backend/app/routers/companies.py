@@ -4,7 +4,10 @@ Companies Router — Employer company profile and dashboard.
 All endpoints require employer role.
 """
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +23,28 @@ from app.schemas.company import CompanyResponse, CompanyUpdate, DashboardSummary
 from app.services.kora_service import KoraService, KoraError
 
 router = APIRouter(prefix="/api/v1/companies", tags=["Companies"])
+
+
+class FundCard(BaseModel):
+    """Card details for a card-funded top-up (Kora encrypts in transit)."""
+    number: str
+    cvv: str
+    expiry_month: str
+    expiry_year: str
+
+
+class FundRequest(BaseModel):
+    """
+    Top up the company's Kora wallet. With `card`, charges the card (credits
+    immediately). Without `card`, returns a virtual bank account to transfer to.
+    Kora collection is NGN-only.
+    """
+    amount: float = Field(gt=0, description="Amount to fund")
+    currency: str | None = Field(
+        default=None, description="Defaults to the company's currency (NGN)"
+    )
+    narration: str | None = None
+    card: FundCard | None = None
 
 
 @router.get("/me", response_model=CompanyResponse)
@@ -89,6 +114,69 @@ async def get_balance(
         "balances": balances,
         "mock": kora.mock_mode,
     }
+
+
+@router.post("/me/fund")
+async def fund_company(
+    payload: FundRequest,
+    current_user: User = Depends(require_employer),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Fund the company's Kora wallet (pay-in).
+
+    - With `card`: charges the card and credits the balance immediately.
+    - Without `card`: returns a virtual bank account to transfer into.
+    """
+    company = current_user.company
+    if not company:
+        raise HTTPException(status_code=404, detail="No company found")
+
+    currency = (payload.currency or company.currency or "NGN").upper()
+    reference = f"solvofund{uuid.uuid4().hex[:14]}"
+    narration = payload.narration or "Wallet top-up"
+    kora = KoraService()
+
+    try:
+        if payload.card:
+            result = await kora.charge_card(
+                reference=reference,
+                amount=payload.amount,
+                currency=currency,
+                card_number=payload.card.number,
+                cvv=payload.card.cvv,
+                expiry_month=payload.card.expiry_month,
+                expiry_year=payload.card.expiry_year,
+                customer_name=company.name,
+                customer_email=current_user.email,
+            )
+            result["method"] = "card"
+        else:
+            result = await kora.initiate_charge(
+                reference=reference,
+                amount=payload.amount,
+                currency=currency,
+                customer_name=company.name,
+                customer_email=current_user.email,
+                narration=narration,
+            )
+            result["method"] = "bank_transfer"
+    except KoraError as exc:
+        raise HTTPException(status_code=502, detail=f"Funding failed: {exc}")
+
+    return result
+
+
+@router.get("/me/fund/{reference}")
+async def fund_status(
+    reference: str,
+    current_user: User = Depends(require_employer),
+):
+    """Check the status of a wallet top-up by its reference."""
+    try:
+        return await KoraService().get_charge_status(reference)
+    except KoraError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch charge: {exc}")
 
 
 @router.get("/me/dashboard", response_model=DashboardSummary)

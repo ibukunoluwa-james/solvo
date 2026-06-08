@@ -102,6 +102,7 @@ class KoraService:
     def __init__(self):
         self.base_url = settings.kora_api_base_url.rstrip("/")
         self.api_key = settings.kora_api_key
+        self.encryption_key = settings.kora_encryption_key
         self.mock_mode = settings.kora_mock_mode
 
     # ── helpers ──
@@ -301,6 +302,194 @@ class KoraService:
         except httpx.HTTPError as exc:
             logger.error("Kora balance fetch failed: %s", exc)
             raise KoraError(str(exc)) from exc
+
+    # ── Pay-in (fund the wallet) ──
+
+    async def initiate_charge(
+        self,
+        reference: str,
+        amount: float,
+        currency: str,
+        customer_name: str,
+        customer_email: str,
+        narration: str = "Wallet top-up",
+        auto_complete: bool = True,
+    ) -> dict:
+        """
+        Create a bank-transfer charge (pay-in) that credits the merchant
+        balance. Returns the virtual account to pay into and the charge status.
+
+        `auto_complete=True` is a sandbox convenience that auto-settles the
+        charge (otherwise sandbox auto-completes after ~2 minutes). Raises
+        KoraError on failure. Bank-transfer collection is NGN-only on Kora.
+        """
+        if self.mock_mode:
+            return {
+                "reference": reference,
+                "status": "success",
+                "amount": round(amount, 2),
+                "amount_expected": round(amount, 2),
+                "currency": currency,
+                "fee": 0,
+                "pay_to": {
+                    "account_number": "0000000000",
+                    "bank_name": "Mock Bank",
+                    "account_name": "Solvo Mock Wallet",
+                    "expiry_date_in_utc": None,
+                },
+                "message": "Mock funding completed",
+                "mock": True,
+            }
+
+        payload = {
+            "reference": reference,
+            "amount": round(amount, 2),
+            "currency": currency,
+            "customer": {"name": customer_name, "email": customer_email},
+            "narration": narration,
+            "merchant_bears_cost": True,
+            "auto_complete": auto_complete,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{self.base_url}/charges/bank-transfer",
+                    json=payload,
+                    headers=self._headers(),
+                )
+        except httpx.HTTPError as exc:
+            logger.error("Kora charge transport error for %s: %s", reference, exc)
+            raise KoraError(str(exc)) from exc
+
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        if resp.status_code >= 400 or not body.get("status", False):
+            raise KoraError(self._error_message(body, resp.status_code))
+
+        data = body.get("data", {})
+        ba = data.get("bank_account", {}) or {}
+        return {
+            "reference": data.get("reference", reference),
+            "status": data.get("status", "processing"),
+            "amount": data.get("amount"),
+            "amount_expected": data.get("amount_expected"),
+            "currency": data.get("currency", currency),
+            "fee": data.get("fee"),
+            "pay_to": {
+                "account_number": ba.get("account_number"),
+                "bank_name": ba.get("bank_name"),
+                "account_name": ba.get("account_name"),
+                "expiry_date_in_utc": ba.get("expiry_date_in_utc"),
+            },
+            "message": body.get("message", ""),
+        }
+
+    async def get_charge_status(self, reference: str) -> dict:
+        """Look up a pay-in charge by reference (status, amount_paid, etc.)."""
+        if self.mock_mode:
+            return {"reference": reference, "status": "success", "amount_paid": None}
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(
+                    f"{self.base_url}/charges/{reference}", headers=self._headers()
+                )
+        except httpx.HTTPError as exc:
+            raise KoraError(str(exc)) from exc
+
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        if resp.status_code >= 400 or not body.get("status", False):
+            raise KoraError(self._error_message(body, resp.status_code))
+        return body.get("data", {})
+
+    def _encrypt_charge_data(self, payload: dict) -> str:
+        """
+        AES-256-GCM encrypt a charge payload with the encryption key, formatted
+        as Kora expects: hex `iv:ciphertext:authTag`.
+        """
+        import os
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        iv = os.urandom(16)
+        sealed = AESGCM(self.encryption_key.encode()).encrypt(
+            iv, json.dumps(payload).encode(), None
+        )
+        ciphertext, tag = sealed[:-16], sealed[-16:]
+        return f"{iv.hex()}:{ciphertext.hex()}:{tag.hex()}"
+
+    async def charge_card(
+        self,
+        reference: str,
+        amount: float,
+        currency: str,
+        card_number: str,
+        cvv: str,
+        expiry_month: str,
+        expiry_year: str,
+        customer_name: str,
+        customer_email: str,
+    ) -> dict:
+        """
+        Charge a card (encrypted) to fund the merchant balance. Credits
+        immediately for no-auth cards. Card API is NGN-only on Kora.
+        (The card charge endpoint does not accept a narration field.)
+        """
+        if self.mock_mode:
+            return {
+                "reference": reference,
+                "status": "success",
+                "amount": round(amount, 2),
+                "currency": currency,
+                "fee": 0,
+                "message": "Mock card charge completed",
+                "mock": True,
+            }
+
+        plain = {
+            "reference": reference,
+            "card": {
+                "number": card_number,
+                "cvv": cvv,
+                "expiry_month": expiry_month,
+                "expiry_year": expiry_year,
+            },
+            "amount": round(amount, 2),
+            "currency": currency,
+            "customer": {"name": customer_name, "email": customer_email},
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{self.base_url}/charges/card",
+                    json={"charge_data": self._encrypt_charge_data(plain)},
+                    headers=self._headers(),
+                )
+        except httpx.HTTPError as exc:
+            logger.error("Kora card charge transport error for %s: %s", reference, exc)
+            raise KoraError(str(exc)) from exc
+
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        if resp.status_code >= 400 or not body.get("status", False):
+            raise KoraError(self._error_message(body, resp.status_code))
+
+        data = body.get("data", {})
+        return {
+            "reference": data.get("payment_reference", reference),
+            "status": data.get("status", "processing"),
+            "amount": data.get("amount"),
+            "currency": data.get("currency", currency),
+            "fee": data.get("fee"),
+            "auth_model": data.get("auth_model"),
+            "message": data.get("response_message") or body.get("message", ""),
+        }
 
     # ── Webhook signature ──
 

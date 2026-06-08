@@ -7,7 +7,7 @@ import { api, ApiError } from "../../_lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@solvo.demo");
+  const [email, setEmail] = useState("admin@solvopay.africa");
   const [password, setPassword] = useState("Solvo!Demo123");
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState<string | null>(null);
